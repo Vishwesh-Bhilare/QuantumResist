@@ -42,6 +42,7 @@ function showToast(message, symbol = '✓') {
 function openModal(modal) {
   modal.hidden = false;
   document.body.style.overflow = 'hidden';
+  if (modal.id === 'keyModal') playKeyDerivationReveal();
 }
 
 function closeModal(modal) {
@@ -60,6 +61,15 @@ async function sendMessage(text) {
   row.innerHTML = `<div class="bubble"><p>${escapeHtml(text)}</p><div><span class="cipher-preview">${ciphertext}</span><span>ML-DSA ✓</span><time>${timeNow()}</time></div></div>`;
   $('#messages').append(row);
   $('#messages').scrollTo({ top: $('#messages').scrollHeight, behavior: 'smooth' });
+
+  await wait(700);
+  const received = document.createElement('div');
+  received.className = 'message-row received';
+  received.innerHTML = `<div class="mini-avatar">B</div><div class="bubble"><p class="cipher-preview">${ciphertext}</p><div><span>DECRYPTING...</span><time>${timeNow()}</time></div></div>`;
+  $('#messages').append(received);
+  $('#messages').scrollTo({ top: $('#messages').scrollHeight, behavior: 'smooth' });
+  await wait(300);
+  received.querySelector('.bubble').innerHTML = `<p>${escapeHtml(text)}</p><div><span>DECRYPTED ✓</span><time>${timeNow()}</time></div>`;
 
   state.messageCount += 1;
   state.epoch = nextEpoch(state.epoch);
@@ -119,6 +129,20 @@ $$('[data-mode]').forEach(button => button.addEventListener('click', () => {
   $('#attackTerminal').innerHTML = `<div><span>quantum@lab:~$</span> Target selected: ${state.attackMode === 'classical' ? 'RSA-2048' : 'ML-KEM-1024'}</div>`;
 }));
 
+async function typeTerminalLine(terminal, line, className = '') {
+  const item = document.createElement('div');
+  item.className = className;
+  const prompt = document.createElement('span');
+  prompt.textContent = '›';
+  item.append(prompt, ' ');
+  terminal.append(item);
+  for (const char of line) {
+    item.append(char);
+    terminal.scrollTop = terminal.scrollHeight;
+    await wait(18);
+  }
+}
+
 $('#launchAttack').addEventListener('click', async () => {
   const terminal = $('#attackTerminal');
   const launch = $('#launchAttack');
@@ -139,15 +163,25 @@ $('#launchAttack').addEventListener('click', async () => {
     ['POST-QUANTUM CHANNEL REMAINS SECURE', 'success-line'],
   ];
   for (const [line, className] of state.attackMode === 'classical' ? classical : pqc) {
-    const item = document.createElement('div');
-    item.className = className;
-    item.innerHTML = `<span>›</span> ${line}`;
-    terminal.append(item);
-    terminal.scrollTop = terminal.scrollHeight;
-    await wait(510);
+    await typeTerminalLine(terminal, line, className);
   }
   launch.disabled = false;
 });
+
+async function playKeyDerivationReveal() {
+  const steps = $$('[data-key-step]');
+  steps.forEach(step => {
+    step.classList.remove('revealed');
+    step.style.animation = 'none';
+  });
+  // Force animation restart when the inspector is reopened.
+  void $('#keyPath').offsetWidth;
+  for (const step of steps) {
+    step.style.animation = '';
+    step.classList.add('revealed');
+    await wait(400);
+  }
+}
 
 $('#revealKeys').addEventListener('click', event => {
   const revealed = event.currentTarget.dataset.revealed === 'true';
@@ -174,11 +208,51 @@ $('#soundToggle').addEventListener('click', event => {
   showToast(state.sound ? 'Interface sound enabled' : 'Interface sound muted');
 });
 
+const originalSignedMessage = 'Deploy relief team to sector 7.';
+let signatureRun = 0;
+
+async function runSignatureVerification(valid = true) {
+  const run = ++signatureRun;
+  const log = $('#signatureLog');
+  const verifyButton = $('#verifySignature');
+  const tamperButton = $('#tamperSignature');
+  verifyButton.disabled = tamperButton.disabled = true;
+  log.innerHTML = '';
+  const steps = [
+    ['Signing with ML-DSA-87...', ''],
+    ['Signature appended.', ''],
+    [valid ? '✓ Signature valid' : '✗ Signature invalid — message integrity compromised', valid ? 'success-line' : 'danger-line'],
+  ];
+  for (const [line, className] of steps) {
+    if (run !== signatureRun) return;
+    const item = document.createElement('div');
+    item.className = className;
+    item.innerHTML = `<span>sig@demo:~$</span> ${line}`;
+    log.append(item);
+    log.scrollTop = log.scrollHeight;
+    await wait(420);
+  }
+  if (run === signatureRun) verifyButton.disabled = tamperButton.disabled = false;
+}
+
+$('#verifySignature').addEventListener('click', () => runSignatureVerification(!$('#signedMessage').value.includes('[MODIFIED]')));
+$('#tamperSignature').addEventListener('click', () => {
+  const input = $('#signedMessage');
+  if (!input.value.includes('[MODIFIED]')) input.value += ' [MODIFIED]';
+  runSignatureVerification(false);
+});
+$('#resetSignature').addEventListener('click', () => {
+  $('#signedMessage').value = originalSignedMessage;
+  $('#signatureLog').innerHTML = '<div><span>sig@demo:~$</span> Ready to verify Alice’s signed message.</div>';
+  $('#verifySignature').disabled = $('#tamperSignature').disabled = false;
+});
+
 $$('.nav-item[data-view]').forEach(button => button.addEventListener('click', () => {
   $$('.nav-item').forEach(item => item.classList.remove('active'));
   button.classList.add('active');
-  const target = button.dataset.view === 'keys' ? $('.ratchet-panel') : button.dataset.view === 'messages' ? $('.secure-channel') : document.querySelector('main');
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const main = document.querySelector('main');
+  main.dataset.activeView = button.dataset.view;
+  main.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }));
 
 setSessionTelemetry();
