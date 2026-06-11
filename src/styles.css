@@ -58,3 +58,33 @@ footer{height:59px;display:flex;align-items:center;justify-content:space-between
 main[data-active-view="messages"] .hero-row,main[data-active-view="messages"] .metrics-grid,main[data-active-view="messages"] .crypto-stack,main[data-active-view="messages"] .ratchet-panel,main[data-active-view="messages"] .session-panel,main[data-active-view="messages"] .signature-panel,main[data-active-view="messages"] .lower-grid,main[data-active-view="messages"] footer{display:none}main[data-active-view="messages"] .workspace-grid{grid-template-columns:minmax(560px,820px);justify-content:center}main[data-active-view="messages"] .secure-channel{display:block}
 main[data-active-view="keys"] .hero-row,main[data-active-view="keys"] .metrics-grid,main[data-active-view="keys"] .secure-channel,main[data-active-view="keys"] footer{display:none}main[data-active-view="keys"] .workspace-grid{grid-template-columns:minmax(330px,420px);justify-content:center}main[data-active-view="keys"] .crypto-stack{display:block}
 main[data-active-view="keys"] .session-panel{display:none}main[data-active-view="keys"] .lower-grid{grid-template-columns:minmax(330px,420px);justify-content:center}
+
+.role-picker { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; gap:24px; background: var(--bg); }
+.role-picker-btn { width:200px; height:100px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; border-radius:6px; border:1px solid var(--line); background:linear-gradient(145deg,#0d1417,#0a1012); cursor:pointer; transition:.2s; }
+.role-picker-btn .role-letter { font:700 32px var(--mono); }
+.role-picker-btn .role-name { font:500 9px var(--mono); letter-spacing:1.5px; color: var(--muted); }
+.role-picker-btn.alice:hover { border-color: var(--cyan); box-shadow: 0 0 24px rgba(41,232,199,.15); }
+.role-picker-btn.alice .role-letter { color: var(--cyan); }
+.role-picker-btn.bob:hover { border-color: var(--purple); box-shadow: 0 0 24px rgba(163,140,255,.15); }
+.role-picker-btn.bob .role-letter { color: var(--purple); }
+.role-picker-btn.eve:hover { border-color: var(--danger); box-shadow: 0 0 24px rgba(255,102,110,.15); }
+.role-picker-btn.eve .role-letter { color: var(--danger); }
+.peer-roster { display:flex; align-items:center; gap:10px; padding:0 18px; font:8px var(--mono); }
+.peer-roster-dot { display:flex; align-items:center; gap:5px; color: #435a5e; }
+.peer-roster-dot i { width:6px; height:6px; border-radius:50%; background:#1e2e32; transition:.4s; }
+.peer-roster-dot.online i { background: var(--cyan); box-shadow:0 0 7px var(--cyan); }
+.peer-roster-dot.online { color: var(--muted); }
+.eve-layout { display:grid; grid-template-columns:1fr 310px; gap:12px; height:calc(100vh - 72px - 90px); }
+.eve-log-panel { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:5px; background:linear-gradient(145deg,#0a0e10,#070b0d); overflow:hidden; }
+.eve-log-header { height:52px; padding:0 18px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line-soft); }
+.eve-log { flex:1; padding:16px; overflow-y:auto; font:10px/1.9 var(--mono); color:#607a76; scrollbar-width:thin; scrollbar-color:#1e2e32 transparent; }
+.eve-log .danger-line { color: var(--danger); }
+.eve-log .success-line { color: var(--cyan); }
+.eve-log .separator { color:#1e3035; }
+.eve-sidebar { display:flex; flex-direction:column; gap:12px; }
+.intercept-stats { padding:20px; border:1px solid var(--line); border-radius:5px; background:linear-gradient(145deg,#0d1417,#0a1012); }
+.intercept-stats h3 { margin:0 0 16px; font:500 9px var(--mono); letter-spacing:1.2px; color:#5c7479; }
+.stat-block { margin-bottom:14px; }
+.stat-block .stat-value { font:700 28px var(--mono); color: var(--text); }
+.stat-block .stat-value.zero { color: var(--cyan); }
+.stat-block .stat-label { font:8px var(--mono); color:#4e6469; letter-spacing:.8px; margin-top:4px; }

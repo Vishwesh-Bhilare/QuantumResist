@@ -21,7 +21,12 @@
           <span class="network-dot"></span>
           <span>Secure network</span>
           <span class="divider"></span>
-          <span id="headerLatency">12ms</span>
+          <span id="headerLatency">pending</span>
+        </div>
+        <div class="peer-roster" id="peerRoster">
+          <div class="peer-roster-dot" id="peer-alice"><i></i><span>ALICE</span></div>
+          <div class="peer-roster-dot" id="peer-bob"><i></i><span>BOB</span></div>
+          <div class="peer-roster-dot" id="peer-eve"><i></i><span>EVE</span></div>
         </div>
         <div class="topbar-actions">
           <button class="icon-button" id="soundToggle" aria-label="Toggle sound">
@@ -93,7 +98,7 @@
           </article>
           <article class="metric-card">
             <div class="metric-icon green"><svg viewBox="0 0 24 24"><path d="M4 17V7m5 13V4m6 13V7m5 13V4"/></svg></div>
-            <div><span class="metric-label">CHANNEL LATENCY</span><strong id="latencyMetric">12 <small>ms</small></strong></div>
+            <div><span class="metric-label">CHANNEL LATENCY</span><strong id="latencyMetric">pending</strong></div>
             <span class="sparkline"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
           </article>
         </section>
@@ -115,16 +120,7 @@
                 <div class="avatar bob">B<span></span></div>
               </div>
             </div>
-            <div class="messages" id="messages" aria-live="polite">
-              <div class="system-message"><span></span> Secure session established <time>just now</time></div>
-              <div class="message-row sent">
-                <div class="bubble"><p>Channel online. Post-quantum handshake complete.</p><div><span>ML-DSA ✓</span><time>10:42</time></div></div>
-              </div>
-              <div class="message-row received">
-                <div class="mini-avatar">B</div>
-                <div class="bubble"><p>Identity verified. Ready to receive.</p><div><span>DECRYPTED ✓</span><time>10:42</time></div></div>
-              </div>
-            </div>
+            <div class="messages" id="messages" aria-live="polite"></div>
             <form class="composer" id="messageForm">
               <button type="button" class="attach" aria-label="Attach file"><svg viewBox="0 0 24 24"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2A2 2 0 0 1 7 14.8l8.5-8.5"/></svg></button>
               <input id="messageInput" maxlength="180" autocomplete="off" placeholder="Type a secure message..." aria-label="Secure message" />
@@ -140,7 +136,7 @@
             </div>
             <div class="stack-connector"><span></span></div>
             <div class="stack-item">
-              <div class="stack-number">02</div><div class="stack-main"><span>KEY DERIVATION</span><strong>HKDF-SHA3-512</strong><small>Root → Chain → Message</small></div><div class="stack-check">✓</div>
+              <div class="stack-number">02</div><div class="stack-main"><span>KEY DERIVATION</span><strong>HMAC-SHA-256</strong><small>PBKDF2 → HMAC labels</small></div><div class="stack-check">✓</div>
             </div>
             <div class="stack-connector"><span></span></div>
             <div class="stack-item">
@@ -175,7 +171,7 @@
               <div><span>KEY EXCHANGE</span><strong>ML-KEM-1024</strong></div><div><span>SIGNATURE</span><strong>ML-DSA-87</strong></div>
               <div><span>ENCRYPTION</span><strong>AES-256-GCM</strong></div><div><span>FORWARD SECRECY</span><strong class="enabled"><i></i> ENABLED</strong></div>
             </div>
-            <div class="fingerprint"><span>SESSION FINGERPRINT</span><code id="fingerprint">7A:91:EC:02:8F:4D:11:B7</code><button id="copyFingerprint" aria-label="Copy fingerprint"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h4"/></svg></button></div>
+            <div class="fingerprint"><span>SESSION FINGERPRINT</span><code id="fingerprint">DERIVING</code><button id="copyFingerprint" aria-label="Copy fingerprint"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h4"/></svg></button></div>
           </article>
         </section>
 
@@ -184,12 +180,12 @@
           <div class="signature-demo">
             <label for="signedMessage">Signed message (Alice → Bob)</label>
             <div class="signature-controls">
-              <input id="signedMessage" type="text" value="Deploy relief team to sector 7." autocomplete="off" />
+              <input id="signedMessage" type="text" value="" autocomplete="off" />
               <button id="verifySignature" type="button">Verify signature</button>
               <button id="tamperSignature" type="button">Tamper message</button>
               <button id="resetSignature" type="button">Reset</button>
             </div>
-            <div class="signature-terminal" id="signatureLog" aria-live="polite"><div><span>sig@demo:~$</span> Ready to verify Alice’s signed message.</div></div>
+            <div class="signature-terminal" id="signatureLog" aria-live="polite"><div><span>sig@demo:~$</span> Waiting for runtime payload.</div></div>
           </div>
         </article>
 
@@ -220,11 +216,11 @@
         <button class="modal-close" data-close aria-label="Close">×</button>
         <span class="modal-kicker">EPHEMERAL SESSION MATERIAL</span><h2 id="keyTitle">Key derivation inspector</h2>
         <div class="key-path" id="keyPath">
-          <div class="key-step" data-key-step><span>ML-KEM SHARED SECRET</span><code id="sharedKey">••••••••••••••••</code></div><b class="key-arrow" data-key-step>↓ <small>HKDF-SHA3-512</small></b>
-          <div class="key-step" data-key-step><span>ROOT KEY</span><code id="rootKey">••••••••••••••••</code></div><b class="key-arrow" data-key-step>↓ <small>RATCHET KDF</small></b>
-          <div class="key-step" data-key-step><span>MESSAGE KEY <i id="modalEpoch">001</i></span><code id="messageKey">••••••••••••••••</code></div>
+          <div class="key-step" data-key-step><span>ML-KEM SHARED SECRET</span><code id="sharedKey">DERIVING</code></div><b class="key-arrow" data-key-step>↓ <small>HMAC-SHA-256</small></b>
+          <div class="key-step" data-key-step><span>ROOT KEY</span><code id="rootKey">DERIVING</code></div><b class="key-arrow" data-key-step>↓ <small>HMAC-SHA-256 LABEL</small></b>
+          <div class="key-step" data-key-step><span>MESSAGE KEY <i id="modalEpoch">001</i></span><code id="messageKey">DERIVING</code></div>
         </div>
-        <div class="key-warning"><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.7 2.4 18a2 2 0 0 0 1.8 3h15.6a2 2 0 0 0 1.8-3L13.7 3.7a2 2 0 0 0-3.4 0Z"/></svg> Values are masked by default and are regenerated when the session resets.</div>
+        <div class="key-warning"><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.7 2.4 18a2 2 0 0 0 1.8 3h15.6a2 2 0 0 0 1.8-3L13.7 3.7a2 2 0 0 0-3.4 0Z"/></svg> Values are computed at runtime from Web Crypto session material.</div>
         <button class="launch-button safe" id="revealKeys">Reveal demo values</button>
       </div>
     </div>
