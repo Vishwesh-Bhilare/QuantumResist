@@ -1,0 +1,12 @@
+{
+  "name": "quantum-resist",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/server.js",
+    "build": "node scripts/build.js",
+    "preview": "cd dist && node ../scripts/server.js",
+    "test": "node --test"
+  }
+}
