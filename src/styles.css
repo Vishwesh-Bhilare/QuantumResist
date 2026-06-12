@@ -462,3 +462,14 @@ main[data-active-view="keys"] .lower-grid{grid-template-columns:minmax(330px,420
   .connection-line{padding:0 8px}
   .metric-note{display:none}
 }
+
+
+/* ── Role-specific pipeline offset ── */
+body[data-role="eve"] .pipeline-overlay,
+body[data-role="alice"] .pipeline-overlay,
+body[data-role="bob"] .pipeline-overlay {
+  left: 226px;
+}
+body[data-role="eve"] .pipeline-overlay {
+  left: 0;
+}

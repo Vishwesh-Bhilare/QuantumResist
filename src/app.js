@@ -23,7 +23,8 @@ const state = {
   attackMode: 'classical',
 };
 
-const $ = selector => document.querySelector(selector);
+const $ = id => document.getElementById(id) ?? document.querySelector(id);
+const $q = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const timeNow = () => new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
@@ -39,13 +40,13 @@ function fingerprintFromBytes(bytes) {
 }
 
 function showToast(message, symbol = '✓') {
-  const toast = $('#toast');
+  const toast = document.getElementById('toast');
   if (!toast) return;
   toast.querySelector('span').textContent = symbol;
   toast.querySelector('p').textContent = message;
   toast.classList.add('show');
-  clearTimeout(showToast.timeout);
-  showToast.timeout = setTimeout(() => toast.classList.remove('show'), 2300);
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toast.classList.remove('show'), 2300);
 }
 
 function openModal(modal) {
@@ -64,25 +65,25 @@ function closeModal(modal) {
 function updateRoster(roles) {
   state.peers = roles;
   for (const role of ['alice', 'bob', 'eve']) {
-    $('#peer-' + role)?.classList.toggle('online', roles.includes(role));
+    document.getElementById('peer-' + role)?.classList.toggle('online', roles.includes(role));
   }
 }
 
 function setLatency(ms) {
   const value = Math.max(1, Math.round(ms));
-  const headerEl = $('#headerLatency');
-  const metricEl = $('#latencyMetric');
-  if (headerEl) headerEl.textContent = `${value}ms`;
-  if (metricEl) metricEl.innerHTML = `${value} <small>ms</small>`;
+  const h = document.getElementById('headerLatency');
+  const m = document.getElementById('latencyMetric');
+  if (h) h.textContent = `${value}ms`;
+  if (m) m.innerHTML = `${value} <small>ms</small>`;
 }
 
 async function setKeyInspector() {
   const sharedKeyBytes = getSharedKeyBytes();
   if (!sharedKeyBytes) return;
   const current = await deriveMessageKey(sharedKeyBytes, state.epoch);
-  const sharedEl = $('#sharedKey');
-  const rootEl = $('#rootKey');
-  const msgEl = $('#messageKey');
+  const sharedEl = document.getElementById('sharedKey');
+  const rootEl = document.getElementById('rootKey');
+  const msgEl = document.getElementById('messageKey');
   if (sharedEl) sharedEl.textContent = toHex(sharedKeyBytes).slice(0, 48) + '...';
   if (rootEl) rootEl.textContent = toHex(sharedKeyBytes).slice(0, 32) + ' · runtime-generated';
   if (msgEl) msgEl.textContent = current.keyHex;
@@ -90,11 +91,11 @@ async function setKeyInspector() {
 
 async function setSessionTelemetry() {
   const sharedKeyBytes = getSharedKeyBytes();
-  const keyCountEl = $('#keyCount');
-  const ratchetLabelEl = $('#ratchetLabel');
-  const epochBadgeEl = $('#epochBadge');
-  const modalEpochEl = $('#modalEpoch');
-  const fingerprintEl = $('#fingerprint');
+  const keyCountEl = document.getElementById('keyCount');
+  const ratchetLabelEl = document.getElementById('ratchetLabel');
+  const epochBadgeEl = document.getElementById('epochBadge');
+  const modalEpochEl = document.getElementById('modalEpoch');
+  const fingerprintEl = document.getElementById('fingerprint');
 
   if (keyCountEl) keyCountEl.textContent = epochLabel(state.epoch);
   if (ratchetLabelEl) ratchetLabelEl.textContent = `Epoch ${epochLabel(state.epoch)} · ${state.role === 'eve' ? 'Observed' : 'Synchronized'}`;
@@ -106,15 +107,12 @@ async function setSessionTelemetry() {
 }
 
 function updateRatchetFlow() {
-  const flowEl = $('#ratchetFlow');
+  const flowEl = document.getElementById('ratchetFlow');
   if (!flowEl) return;
   const epoch = state.epoch;
-  // Show 6 nodes: current-3 through current+2
   const nodes = [];
   for (let e = Math.max(1, epoch - 3); e <= epoch + 2; e++) {
-    if (e < epoch - 1) {
-      nodes.push(`<div class="key-node destroyed"><span>MK ${epochLabel(e)}</span><strong>DELETED</strong></div>`);
-    } else if (e === epoch - 1 && epoch > 1) {
+    if (e < epoch) {
       nodes.push(`<div class="key-node destroyed"><span>MK ${epochLabel(e)}</span><strong>DELETED</strong></div>`);
     } else if (e === epoch) {
       nodes.push(`<div class="key-node current"><span>MK ${epochLabel(e)}</span><strong>ACTIVE</strong></div>`);
@@ -122,8 +120,7 @@ function updateRatchetFlow() {
       nodes.push(`<div class="key-node future"><span>MK ${epochLabel(e)}</span><strong>LOCKED</strong></div>`);
     }
     if (e < epoch + 2) {
-      const isDashed = e >= epoch;
-      nodes.push(`<i${isDashed ? ' class="dashed"' : ''}></i>`);
+      nodes.push(`<i${e >= epoch ? ' class="dashed"' : ''}></i>`);
     }
   }
   flowEl.innerHTML = nodes.join('');
@@ -135,14 +132,17 @@ function flashStack() {
 }
 
 function addSystemMessage(text) {
-  const msgEl = $('#messages');
+  const msgEl = document.getElementById('messages');
   if (!msgEl) return;
   msgEl.innerHTML += `<div class="system-message"><span></span> ${escapeHtml(text)} <time>${timeNow()}</time></div>`;
 }
 
-// ── Broadcast helper (wraps demo_control sends) ───────────────────────────────
+// ── Broadcast helper ──────────────────────────────────────────────────────────
 export function broadcastDemoControl(action, payload = {}) {
-  if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return;
+  if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
+    console.warn('broadcastDemoControl: socket not open', action);
+    return;
+  }
   state.socket.send(JSON.stringify({ type: 'demo_control', action, payload }));
 }
 
@@ -153,9 +153,9 @@ async function sendMessage(text) {
     showToast('Alice must be connected before sending', '!');
     return;
   }
-  if (!sharedKeyBytes) { showToast('Session not yet initialized', '!'); return; }
+  if (!sharedKeyBytes) { showToast('Session not yet initialized — wait a moment', '!'); return; }
 
-  const sendButton = $('.send-button');
+  const sendButton = $q('.send-button');
   if (sendButton) sendButton.disabled = true;
 
   const { keyBytes, keyHex } = await deriveMessageKey(sharedKeyBytes, state.epoch);
@@ -173,110 +173,118 @@ async function sendMessage(text) {
   const row = document.createElement('div');
   row.className = 'message-row sent';
   row.innerHTML = `<div class="bubble"><p>${escapeHtml(text)}</p><div><span class="cipher-preview">${truncateCiphertext(encrypted)}</span><span>ML-DSA ✓ · HMAC ✓</span><time>${timeNow()}</time></div></div>`;
-  $('#messages')?.append(row);
-  $('#messages')?.scrollTo({ top: $('#messages').scrollHeight, behavior: 'smooth' });
+  document.getElementById('messages')?.append(row);
+  document.getElementById('messages')?.scrollTo({ top: 999999, behavior: 'smooth' });
 
   state.messageCount += 1;
   state.epoch = nextEpoch(state.epoch);
-  const msgCountEl = $('#messageCount');
+  const msgCountEl = document.getElementById('messageCount');
   if (msgCountEl) msgCountEl.textContent = String(state.messageCount);
   await setSessionTelemetry();
   flashStack();
   if (sendButton) sendButton.disabled = false;
-  showToast(`Message encrypted · MK ${epochLabel(state.epoch - 1)} erased`);
+  showToast(`Encrypted · MK ${epochLabel(state.epoch - 1)} erased`);
 }
 
 // ── Bob receives relayed message ──────────────────────────────────────────────
 async function handleBobRelay(message) {
   const sharedKeyBytes = getSharedKeyBytes();
+  if (!sharedKeyBytes) {
+    showToast('Session key not yet received — message dropped', '!');
+    return;
+  }
   const row = document.createElement('div');
   row.className = 'message-row received';
   row.innerHTML = `<div class="mini-avatar">A</div><div class="bubble"><p class="cipher-preview">${message.ciphertext.slice(0, 64)}…</p><div><span>DECRYPTING...</span><time>${timeNow()}</time></div></div>`;
-  $('#messages')?.append(row);
-  $('#messages')?.scrollTo({ top: $('#messages').scrollHeight, behavior: 'smooth' });
+  document.getElementById('messages')?.append(row);
+  document.getElementById('messages')?.scrollTo({ top: 999999, behavior: 'smooth' });
   await wait(300);
 
-  const { keyBytes, keyHex } = await deriveMessageKey(sharedKeyBytes, message.epoch);
-  const hmacOk = await verifyHmac(hexToBytes(message.ciphertext), keyBytes, message.hmac);
-
   try {
+    const { keyBytes, keyHex } = await deriveMessageKey(sharedKeyBytes, message.epoch);
+    const hmacOk = await verifyHmac(hexToBytes(message.ciphertext), keyBytes, message.hmac);
     const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']);
     const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: hexToBytes(message.iv) }, key, hexToBytes(message.ciphertext));
     const plaintext = textDecoder.decode(decrypted);
     row.querySelector('.bubble').innerHTML = `<p>${escapeHtml(plaintext)}</p><div><span>DECRYPTED ✓ · HMAC ${hmacOk ? '✓' : '✗'}</span><time>${timeNow()}</time></div>`;
 
-    // Show reverse pipeline on Bob's screen
     handleDemo4Control({ action: 'pipeline_receive', payload: { keyHex, ivHex: message.iv, hmac: message.hmac, ciphertextHex: message.ciphertext, plaintext, epoch: message.epoch } });
 
     state.messageCount += 1;
-    const msgCountEl = $('#messageCount');
+    const msgCountEl = document.getElementById('messageCount');
     if (msgCountEl) msgCountEl.textContent = String(state.messageCount);
+    state.epoch = Math.max(state.epoch, Number(message.epoch) + 1);
+    await setSessionTelemetry();
+    flashStack();
   } catch (error) {
-    row.querySelector('.bubble').innerHTML = `<p class="danger-line">DECRYPTION FAILED</p><p class="cipher-preview">${message.ciphertext}</p><div><span>HMAC ${hmacOk ? '✓' : '✗'}</span><time>${timeNow()}</time></div>`;
-    console.error(error);
+    row.querySelector('.bubble').innerHTML = `<p class="danger-line">DECRYPTION FAILED</p><p class="cipher-preview">${message.ciphertext.slice(0, 48)}</p><div><span>ERR</span><time>${timeNow()}</time></div>`;
+    console.error('Bob decrypt error:', error);
   }
-
-  state.epoch = Math.max(state.epoch, Number(message.epoch) + 1);
-  await setSessionTelemetry();
-  flashStack();
 }
 
 // ── Eve receives relayed message ──────────────────────────────────────────────
-async function handleEveRelay(message) {
+function handleEveRelay(message) {
   state.interceptCount += 1;
-  const countEl = $('#interceptCount');
-  if (countEl) countEl.textContent = String(state.interceptCount);
-  // Delegate to eve console module
-  const eveConsoleEvent = new CustomEvent('eve:intercept', { detail: message });
-  document.dispatchEvent(eveConsoleEvent);
+  // Update eve epoch counter
+  state.epoch = Math.max(state.epoch, Number(message.epoch || 1) + 1);
+  document.dispatchEvent(new CustomEvent('eve:intercept', { detail: message }));
 }
 
 // ── Demo control dispatcher ───────────────────────────────────────────────────
 async function handleDemoControl(message) {
   const { action, payload, from } = message;
 
+  // session_init: Bob and Eve receive the shared secret from Alice
   if (action === 'session_init') {
+    if (state.role === 'alice') return; // Alice already has it
     receiveSessionSecret(payload.secretHex);
     await setSessionTelemetry();
-    showToast(`Session key received from ${from}`);
-    // Update fingerprint display
+    showToast('Session key received — synchronized');
+    const fpEl = document.getElementById('fingerprint');
     const sharedKeyBytes = getSharedKeyBytes();
-    const fpEl = $('#fingerprint');
     if (sharedKeyBytes && fpEl) fpEl.textContent = fingerprintFromBytes(sharedKeyBytes);
     return;
   }
 
-  // Route to demo modules
-  handleDemo1Control(message, state, broadcastDemoControl);
-  handleDemo2Control(message, state, broadcastDemoControl);
-  handleDemo3Control(message, state, broadcastDemoControl, setSessionTelemetry);
+  // Route to all demo modules — each checks the action internally
+  await handleDemo1Control(message, state, broadcastDemoControl);
+  await handleDemo2Control(message, state, broadcastDemoControl);
+  await handleDemo3Control(message, state, broadcastDemoControl, setSessionTelemetry);
   handleDemo4Control(message);
   handleDemo5Control(message, state);
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function handleSocketMessage(event) {
+  let message;
+  try { message = JSON.parse(event.data); }
+  catch { console.error('Bad WS frame'); return; }
+
   const elapsed = state.lastSendAt ? performance.now() - state.lastSendAt : 0;
-  const message = JSON.parse(event.data);
-  if (message.type === 'roster') updateRoster(message.roles);
-  if (message.type === 'error') showToast(message.message, '!');
+
+  if (message.type === 'roster') { updateRoster(message.roles); return; }
+  if (message.type === 'error') { showToast(message.message, '!'); return; }
   if (message.type === 'relayed') {
-    if (elapsed) setLatency(elapsed);
+    if (elapsed > 0) setLatency(elapsed);
+    state.lastSendAt = null;
     if (state.role === 'bob') handleBobRelay(message);
     if (state.role === 'eve') handleEveRelay(message);
+    return;
   }
-  if (message.type === 'demo_control') handleDemoControl(message);
+  if (message.type === 'demo_control') { handleDemoControl(message); return; }
 }
 
-function connectWebSocket() {
+function connectWebSocket(onOpen) {
   const connectStartedAt = performance.now();
   const socket = new WebSocket(`ws://${location.host}`);
   state.socket = socket;
+
   socket.addEventListener('open', () => {
     state.reconnectAttempts = 0;
     setLatency(performance.now() - connectStartedAt);
     socket.send(JSON.stringify({ type: 'join', role: state.role }));
     showToast(`${state.role.toUpperCase()} connected`);
+    if (onOpen) onOpen();
   });
   socket.addEventListener('message', handleSocketMessage);
   socket.addEventListener('close', () => scheduleReconnect());
@@ -286,13 +294,12 @@ function connectWebSocket() {
 function scheduleReconnect() {
   if (state.reconnectAttempts >= 8) return;
   state.reconnectAttempts += 1;
-  showToast('Connection lost — reconnecting', '!');
-  setTimeout(connectWebSocket, 2000);
+  showToast('Connection lost — reconnecting…', '!');
+  setTimeout(() => connectWebSocket(), 2000);
 }
 
-// ── Role picker (shown when no ?role= param) ──────────────────────────────────
+// ── Role picker ───────────────────────────────────────────────────────────────
 function injectRolePicker() {
-  // Detect LAN IP from current hostname
   const lanIp = location.hostname !== 'localhost' ? location.hostname : null;
   const baseUrl = `${location.protocol}//${location.host}`;
 
@@ -322,8 +329,8 @@ function injectRolePicker() {
           </div>`).join('')}
       </div>
     </div>`;
-  document.body.insertBefore(picker, $('.app-shell'));
-  $('.app-shell').style.display = 'none';
+  document.body.insertBefore(picker, $q('.app-shell'));
+  $q('.app-shell').style.display = 'none';
   picker.addEventListener('click', event => {
     const button = event.target.closest('[data-role]');
     if (button) location.search = `?role=${button.dataset.role}`;
@@ -333,31 +340,30 @@ function injectRolePicker() {
 // ── Role-specific UI config ───────────────────────────────────────────────────
 function configureRoleUi() {
   document.body.dataset.role = state.role;
-  const brandEl = $('.brand');
+  const brandEl = $q('.brand');
   if (brandEl) brandEl.href = `?role=${state.role}`;
-  const statusEl = $('.topbar-status span:nth-child(2)');
+  const statusEl = $q('.topbar-status span:nth-child(2)');
   if (statusEl) statusEl.textContent = `${state.role.toUpperCase()} secure network`;
-  const msgEl = $('#messages');
-  if (msgEl) msgEl.innerHTML = '';
-  addSystemMessage(`${state.role.toUpperCase()} joined the LAN presentation`);
 
   if (state.role === 'bob') {
-    const composer = $('.composer');
+    const composer = $q('.composer');
     if (composer) composer.hidden = true;
   }
-  if (state.role === 'alice') {
-    const composer = $('.composer');
-    if (composer) composer.hidden = false;
+  if (state.role === 'eve') {
+    renderEveLayout();
+  } else {
+    // Clear messages for alice/bob
+    const msgEl = document.getElementById('messages');
+    if (msgEl) msgEl.innerHTML = '';
+    addSystemMessage(`${state.role.toUpperCase()} joined the LAN presentation`);
   }
-  if (state.role === 'eve') renderEveLayout();
 }
 
 function renderEveLayout() {
-  const mainEl = $('main');
+  const mainEl = $q('main');
   if (!mainEl) return;
   mainEl.dataset.activeView = 'eve';
   mainEl.innerHTML = `<div id="eve-console-mount"></div>`;
-  // Eve console is fully managed by eve-console.js
   initEveConsole(document.getElementById('eve-console-mount'), state, broadcastDemoControl);
 }
 
@@ -365,50 +371,50 @@ function renderEveLayout() {
 function resetSession() {
   state.epoch = 1;
   state.messageCount = 0;
-  const msgCountEl = $('#messageCount');
+  const msgCountEl = document.getElementById('messageCount');
   if (msgCountEl) msgCountEl.textContent = '0';
-  const handshakeEl = $('#handshakeTime');
+  const handshakeEl = document.getElementById('handshakeTime');
   if (handshakeEl) handshakeEl.textContent = timeNow();
-  addSystemMessage(`${state.role.toUpperCase()} session counters reset`);
+  addSystemMessage(`Session counters reset`);
   setSessionTelemetry();
-  showToast('Runtime session counters reset');
+  showToast('Session counters reset');
 }
 
 // ── Signature verification ────────────────────────────────────────────────────
 async function runSignatureVerification(valid = true) {
-  const log = $('#signatureLog');
-  const verifyButton = $('#verifySignature');
-  const tamperButton = $('#tamperSignature');
-  const sharedKeyBytes = getSharedKeyBytes();
-  if (!log || !verifyButton || !tamperButton) return;
-  verifyButton.disabled = tamperButton.disabled = true;
+  const log = document.getElementById('signatureLog');
+  const verifyBtn = document.getElementById('verifySignature');
+  const tamperBtn = document.getElementById('tamperSignature');
+  if (!log || !verifyBtn || !tamperBtn) return;
+  verifyBtn.disabled = tamperBtn.disabled = true;
   log.innerHTML = '';
-  const data = new TextEncoder().encode($('#signedMessage').value);
+  const sharedKeyBytes = getSharedKeyBytes();
+  const data = new TextEncoder().encode(document.getElementById('signedMessage')?.value || '');
   const keyMaterial = sharedKeyBytes || new Uint8Array(32);
   const signature = await signHmac(data, keyMaterial);
   const ok = valid && await verifyHmac(data, keyMaterial, signature);
   const steps = [
-    [`Signing ${data.byteLength} bytes with HMAC-SHA-256...`, ''],
-    [`Signature ${signature.slice(0, 24)}... appended.`, ''],
-    [ok ? '✓ Signature valid' : '✗ Signature invalid — message integrity compromised', ok ? 'success-line' : 'danger-line'],
+    [`Signing ${data.byteLength} bytes with HMAC-SHA-256…`, ''],
+    [`Signature ${signature.slice(0, 24)}… appended.`, ''],
+    [ok ? '✓ Signature valid' : '✗ Signature INVALID — message integrity compromised', ok ? 'success-line' : 'danger-line'],
   ];
-  for (const [line, className] of steps) {
+  for (const [line, cls] of steps) {
     const item = document.createElement('div');
-    item.className = className;
+    item.className = cls;
     item.innerHTML = `<span>sig@demo:~$</span> ${escapeHtml(line)}`;
     log.append(item);
     log.scrollTop = log.scrollHeight;
     await wait(420);
   }
-  verifyButton.disabled = tamperButton.disabled = false;
+  verifyBtn.disabled = tamperBtn.disabled = false;
 }
 
-// ── Key derivation reveal (modal) ─────────────────────────────────────────────
+// ── Key derivation reveal ─────────────────────────────────────────────────────
 async function playKeyDerivationReveal() {
   await setKeyInspector();
   const steps = $$('[data-key-step]');
   steps.forEach(step => { step.classList.remove('revealed'); step.style.animation = 'none'; });
-  void $('#keyPath')?.offsetWidth;
+  void document.getElementById('keyPath')?.offsetWidth;
   for (const step of steps) {
     step.style.animation = '';
     step.classList.add('revealed');
@@ -417,9 +423,9 @@ async function playKeyDerivationReveal() {
 }
 
 // ── Attack modal ──────────────────────────────────────────────────────────────
-async function typeTerminalLine(terminal, line, className = '') {
+async function typeTerminalLine(terminal, line, cls = '') {
   const item = document.createElement('div');
-  item.className = className;
+  item.className = cls;
   terminal.append(item);
   for (const char of line) {
     item.append(char);
@@ -429,105 +435,107 @@ async function typeTerminalLine(terminal, line, className = '') {
 }
 
 async function runAttackDemo() {
-  const terminal = $('#attackTerminal');
-  const launch = $('#launchAttack');
+  const terminal = document.getElementById('attackTerminal');
+  const launch = document.getElementById('launchAttack');
   if (!terminal || !launch) return;
   launch.disabled = true;
   terminal.innerHTML = '';
-  const target = state.attackMode === 'classical' ? 'RSA-2048' : 'ML-KEM-1024';
-  const lines = state.attackMode === 'classical'
+  const isClassical = state.attackMode === 'classical';
+  const target = isClassical ? 'RSA-2048' : 'ML-KEM-1024';
+  const lines = isClassical
     ? [
-        [`Inspecting ${target} public modulus...`, ''],
-        ['Shor period-finding would recover the private key on a cryptographically relevant quantum computer.', 'danger-line'],
+        [`Inspecting ${target} public modulus…`, ''],
+        ['Shor period-finding recovers the private key on a CRQC.', 'danger-line'],
         ['CLASSICAL CHANNEL COMPROMISED', 'danger-line'],
       ]
     : [
-        [`Inspecting ${target} lattice public material...`, ''],
-        ['No efficient quantum attack is currently known for this module-lattice construction.', 'success-line'],
+        [`Inspecting ${target} lattice public material…`, ''],
+        ['No efficient quantum algorithm known for module-lattice constructions.', 'success-line'],
         ['POST-QUANTUM CHANNEL REMAINS SECURE', 'success-line'],
       ];
-  for (const [line, className] of lines) await typeTerminalLine(terminal, line, className);
+  for (const [line, cls] of lines) await typeTerminalLine(terminal, line, cls);
   launch.disabled = false;
 }
 
 // ── Event bindings ────────────────────────────────────────────────────────────
 function bindEvents() {
-  $('#messageForm')?.addEventListener('submit', async event => {
+  // Message form (Alice only — hidden for Bob, not rendered for Eve)
+  $q('#messageForm')?.addEventListener('submit', async event => {
     event.preventDefault();
-    const input = $('#messageInput');
+    const input = document.getElementById('messageInput');
     const text = input?.value.trim();
     if (!text) return;
     if (input) input.value = '';
     try { await sendMessage(text); }
     catch (error) {
-      showToast('Encryption error — check console', '!');
+      showToast('Encryption error', '!');
       console.error(error);
-      const sendBtn = $('.send-button');
-      if (sendBtn) sendBtn.disabled = false;
+      const btn = $q('.send-button');
+      if (btn) btn.disabled = false;
     }
   });
 
-  $('#attackButton')?.addEventListener('click', () => openModal($('#attackModal')));
-  $('#attackNav')?.addEventListener('click', () => openModal($('#attackModal')));
-  $('#resetNav')?.addEventListener('click', resetSession);
-  $('#inspectButton')?.addEventListener('click', () => openModal($('#keyModal')));
+  document.getElementById('attackButton')?.addEventListener('click', () => openModal(document.getElementById('attackModal')));
+  document.getElementById('attackNav')?.addEventListener('click', () => openModal(document.getElementById('attackModal')));
+  document.getElementById('resetNav')?.addEventListener('click', resetSession);
+  document.getElementById('inspectButton')?.addEventListener('click', () => openModal(document.getElementById('keyModal')));
 
-  $$('[data-close]').forEach(button => button.addEventListener('click', () => closeModal(button.closest('.modal-backdrop'))));
-  $$('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click', event => { if (event.target === backdrop) closeModal(backdrop); }));
-  window.addEventListener('keydown', event => { if (event.key === 'Escape') $$('.modal-backdrop:not([hidden])').forEach(closeModal); });
+  $$('[data-close]').forEach(btn => btn.addEventListener('click', () => closeModal(btn.closest('.modal-backdrop'))));
+  $$('.modal-backdrop').forEach(bd => bd.addEventListener('click', e => { if (e.target === bd) closeModal(bd); }));
+  window.addEventListener('keydown', e => { if (e.key === 'Escape') $$('.modal-backdrop:not([hidden])').forEach(closeModal); });
 
-  $$('[data-mode]').forEach(button => button.addEventListener('click', () => {
-    $$('[data-mode]').forEach(item => item.classList.remove('active'));
-    button.classList.add('active');
-    state.attackMode = button.dataset.mode;
+  $$('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
+    $$('[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.attackMode = btn.dataset.mode;
   }));
 
-  $('#launchAttack')?.addEventListener('click', runAttackDemo);
-  $('#revealKeys')?.addEventListener('click', setKeyInspector);
+  document.getElementById('launchAttack')?.addEventListener('click', runAttackDemo);
+  document.getElementById('revealKeys')?.addEventListener('click', setKeyInspector);
 
-  $('#copyFingerprint')?.addEventListener('click', async () => {
-    const fpEl = $('#fingerprint');
-    if (!fpEl) return;
-    await navigator.clipboard.writeText(fpEl.textContent);
+  document.getElementById('copyFingerprint')?.addEventListener('click', async () => {
+    const fp = document.getElementById('fingerprint');
+    if (!fp) return;
+    await navigator.clipboard.writeText(fp.textContent).catch(() => {});
     showToast('Fingerprint copied');
   });
 
-  $('#soundToggle')?.addEventListener('click', event => {
+  document.getElementById('soundToggle')?.addEventListener('click', event => {
     state.sound = !state.sound;
     event.currentTarget.style.opacity = state.sound ? '1' : '.35';
     showToast(state.sound ? 'Sound enabled' : 'Sound muted');
   });
 
-  $('#verifySignature')?.addEventListener('click', () => {
-    const input = $('#signedMessage');
-    runSignatureVerification(!(input?.value.includes('[MODIFIED]')));
+  document.getElementById('verifySignature')?.addEventListener('click', () => {
+    const input = document.getElementById('signedMessage');
+    runSignatureVerification(!input?.value.includes('[MODIFIED]'));
   });
 
-  $('#tamperSignature')?.addEventListener('click', () => {
-    const input = $('#signedMessage');
+  document.getElementById('tamperSignature')?.addEventListener('click', () => {
+    const input = document.getElementById('signedMessage');
     if (input && !input.value.includes('[MODIFIED]')) input.value += ' [MODIFIED]';
     runSignatureVerification(false);
   });
 
-  $('#resetSignature')?.addEventListener('click', () => {
-    const input = $('#signedMessage');
+  document.getElementById('resetSignature')?.addEventListener('click', () => {
+    const input = document.getElementById('signedMessage');
     if (input) input.value = `Runtime payload ${new Date().toISOString()}`;
-    const handshakeEl = $('#handshakeTime');
-    if (handshakeEl) handshakeEl.textContent = timeNow();
-    const logEl = $('#signatureLog');
-    if (logEl) logEl.innerHTML = '<div><span>sig@demo:~$</span> Ready to verify current runtime payload.</div>';
+    const ht = document.getElementById('handshakeTime');
+    if (ht) ht.textContent = timeNow();
+    const log = document.getElementById('signatureLog');
+    if (log) log.innerHTML = '<div><span>sig@demo:~$</span> Ready to verify current runtime payload.</div>';
   });
 
-  $$('.nav-item[data-view]').forEach(button => button.addEventListener('click', () => {
-    $$('.nav-item').forEach(item => item.classList.remove('active'));
-    button.classList.add('active');
-    const mainEl = $('main');
-    if (mainEl) mainEl.dataset.activeView = button.dataset.view;
-    $('main')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $$('.nav-item[data-view]').forEach(btn => btn.addEventListener('click', () => {
+    $$('.nav-item').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const mainEl = $q('main');
+    if (mainEl) mainEl.dataset.activeView = btn.dataset.view;
+    $q('main')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }));
 }
 
-// ── Main entry ────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   const role = new URLSearchParams(location.search).get('role');
   if (!VALID_ROLES.has(role)) { injectRolePicker(); return; }
@@ -536,7 +544,7 @@ async function main() {
   configureRoleUi();
   bindEvents();
 
-  // Initialize demo modules for this role
+  // Init demo modules (all roles — they check internally what to show)
   initDemo1(state, broadcastDemoControl);
   initDemo2(state, broadcastDemoControl);
   initDemo3(state, broadcastDemoControl);
@@ -544,38 +552,35 @@ async function main() {
   initDemo5(state, broadcastDemoControl);
 
   if (role === 'alice') {
-    // Alice generates and broadcasts the session secret
+    // Alice generates the session secret, then connects and broadcasts it on open
     const { secretHex } = await generateSessionSecret();
-    // Connect first, then broadcast once open
-    connectWebSocket();
-    // Wait for socket to open before broadcasting
-    const waitForOpen = setInterval(() => {
-      if (state.socket?.readyState === WebSocket.OPEN) {
-        clearInterval(waitForOpen);
-        state.socket.send(JSON.stringify({
-          type: 'demo_control',
-          action: 'session_init',
-          payload: { secretHex },
-        }));
-        const fpEl = $('#fingerprint');
-        const sharedKeyBytes = getSharedKeyBytes();
-        if (sharedKeyBytes && fpEl) fpEl.textContent = fingerprintFromBytes(sharedKeyBytes);
-        setSessionTelemetry();
-        const signedMsgInput = $('#signedMessage');
-        if (signedMsgInput) signedMsgInput.value = `Runtime payload ${new Date().toISOString()}`;
-        const handshakeEl = $('#handshakeTime');
-        if (handshakeEl) handshakeEl.textContent = timeNow();
-      }
-    }, 100);
+    connectWebSocket(() => {
+      // Broadcast session_init as soon as socket is open
+      state.socket.send(JSON.stringify({
+        type: 'demo_control',
+        action: 'session_init',
+        payload: { secretHex },
+      }));
+      const fpEl = document.getElementById('fingerprint');
+      const kb = getSharedKeyBytes();
+      if (kb && fpEl) fpEl.textContent = fingerprintFromBytes(kb);
+      setSessionTelemetry();
+      const sigInput = document.getElementById('signedMessage');
+      if (sigInput) sigInput.value = `Runtime payload ${new Date().toISOString()}`;
+      const ht = document.getElementById('handshakeTime');
+      if (ht) ht.textContent = timeNow();
+    });
   } else if (role === 'bob') {
-    // Bob waits for session_init from server (handled in handleDemoControl)
-    connectWebSocket();
-    const handshakeEl = $('#handshakeTime');
-    if (handshakeEl) handshakeEl.textContent = timeNow();
+    connectWebSocket(() => {
+      const ht = document.getElementById('handshakeTime');
+      if (ht) ht.textContent = timeNow();
+      addSystemMessage('BOB waiting for session key from Alice…');
+    });
   } else {
-    // Eve — no shared key, just connects
-    connectWebSocket();
-    updateRoster([]);
+    // Eve — no shared key
+    connectWebSocket(() => {
+      updateRoster([]);
+    });
   }
 }
 
