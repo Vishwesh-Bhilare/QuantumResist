@@ -9,6 +9,8 @@ cpSync('src/app.js', 'dist/src/app.js');
 cpSync('src/crypto.js', 'dist/src/crypto.js');
 cpSync('src/session.js', 'dist/src/session.js');
 cpSync('src/styles.css', 'dist/src/styles.css');
+cpSync('src/attack-demo.js', 'dist/src/attack-demo.js');
+cpSync('src/classical-crypto.js', 'dist/src/classical-crypto.js');
 cpSync('src/demos/demo1.js', 'dist/src/demos/demo1.js');
 cpSync('src/demos/demo2.js', 'dist/src/demos/demo2.js');
 cpSync('src/demos/demo3.js', 'dist/src/demos/demo3.js');
@@ -17,5 +19,6 @@ cpSync('src/demos/demo5.js', 'dist/src/demos/demo5.js');
 cpSync('src/ui/eve-console.js', 'dist/src/ui/eve-console.js');
 cpSync('src/ui/pipeline.js', 'dist/src/ui/pipeline.js');
 cpSync('src/ui/diagrams.js', 'dist/src/ui/diagrams.js');
+cpSync('src/ui/attack-panels.js', 'dist/src/ui/attack-panels.js');
 
 console.log('Built to dist/');

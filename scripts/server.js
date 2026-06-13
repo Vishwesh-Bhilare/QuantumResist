@@ -10,16 +10,19 @@ const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 const wsGuid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const validRoles = new Set(['alice', 'bob', 'eve']);
 
-// Role → socket map
+// Role → Set of sockets (multiple tabs per role)
 const roles = new Map();
 // Socket → metadata map
 const sockets = new Map();
+// Tab counter for unique identification
+let nextTabId = 1;
 
 // Demo state stored server-side
 const demoState = {
   harvestedMessage: null,
   sessionSecret: null, // hex string, set by alice on session_init
   rsaPublicKey: null,  // hex string, set by alice in demo1
+  classicalSessionKey: null, // For attack demo comparison
 };
 
 function getLanIp() {
@@ -77,28 +80,66 @@ function sendError(socket, message) {
   send(socket, { type: 'error', message });
 }
 
+function sendToRole(role, payload, excludeSocket = null) {
+  const socketsSet = roles.get(role);
+  if (!socketsSet) return;
+  for (const socket of socketsSet) {
+    if (socket !== excludeSocket && !socket.destroyed) {
+      send(socket, payload);
+    }
+  }
+}
+
+function sendToAllSockets(payload) {
+  for (const [role, socketsSet] of roles.entries()) {
+    for (const socket of socketsSet) {
+      if (!socket.destroyed) send(socket, payload);
+    }
+  }
+}
+
 function broadcastRoster() {
   const online = [...roles.keys()];
-  for (const socket of roles.values()) send(socket, { type: 'roster', roles: online });
+  const rosterPayload = { type: 'roster', roles: online };
+  for (const socketsSet of roles.values()) {
+    for (const socket of socketsSet) {
+      if (!socket.destroyed) send(socket, rosterPayload);
+    }
+  }
 }
 
 function broadcastAll(payload, excludeRole = null) {
-  for (const [role, socket] of roles.entries()) {
-    if (role !== excludeRole) send(socket, payload);
+  for (const [role, socketsSet] of roles.entries()) {
+    if (role !== excludeRole) {
+      for (const socket of socketsSet) {
+        if (!socket.destroyed) send(socket, payload);
+      }
+    }
   }
 }
 
 function broadcastAllIncludingSender(payload) {
-  for (const socket of roles.values()) send(socket, payload);
+  for (const socketsSet of roles.values()) {
+    for (const socket of socketsSet) {
+      if (!socket.destroyed) send(socket, payload);
+    }
+  }
 }
 
 function cleanup(socket) {
   const meta = sockets.get(socket);
   if (!meta) return;
   sockets.delete(socket);
-  if (meta.role && roles.get(meta.role) === socket) {
-    roles.delete(meta.role);
-    log('disconnect', meta.role);
+  if (meta.role) {
+    const socketsSet = roles.get(meta.role);
+    if (socketsSet) {
+      socketsSet.delete(socket);
+      if (socketsSet.size === 0) {
+        roles.delete(meta.role);
+        log('role-empty', meta.role);
+      }
+    }
+    log('disconnect', `${meta.role} (tab ${meta.tabId})`);
     broadcastRoster();
   }
 }
@@ -125,8 +166,10 @@ function relayFromAlice(socket, message) {
     epoch: message.epoch,
     hmac: message.hmac,
   };
-  for (const [role, peer] of roles.entries()) {
-    if (role !== 'alice') send(peer, payload);
+  
+  // Send to all bob and eve sockets
+  for (const role of ['bob', 'eve']) {
+    sendToRole(role, payload);
   }
   log('relay', `epoch=${message.epoch} bytes=${String(message.ciphertext || '').length / 2}`);
 }
@@ -144,8 +187,19 @@ function handleDemoControl(socket, message) {
     demoState.sessionSecret = payload.secretHex;
     log('session_init', `secret=${payload.secretHex?.slice(0, 16)}...`);
     // Relay to bob and eve only (alice already has it)
-    for (const [role, peer] of roles.entries()) {
-      if (role !== 'alice') send(peer, { type: 'demo_control', action: 'session_init', payload, from: 'alice' });
+    for (const role of ['bob', 'eve']) {
+      sendToRole(role, { type: 'demo_control', action: 'session_init', payload, from: 'alice' });
+    }
+    return;
+  }
+
+  // Classical session key for attack demo (Alice generates and shares)
+  if (action === 'classical_session_init') {
+    if (from !== 'alice') { sendError(socket, 'Only Alice can init classical session'); return; }
+    demoState.classicalSessionKey = payload.secretHex;
+    log('classical_session_init', `key=${payload.secretHex?.slice(0, 16)}...`);
+    for (const role of ['bob', 'eve']) {
+      sendToRole(role, { type: 'demo_control', action: 'classical_session_init', payload, from: 'alice' });
     }
     return;
   }
@@ -163,6 +217,11 @@ function handleDemoControl(socket, message) {
     log('demo2', 'timeskip broadcast');
   }
 
+  // Attack demo step control
+  if (action === 'attack_step') {
+    log('attack_step', `step=${payload.step} from=${from}`);
+  }
+
   // Broadcast to ALL roles including sender
   broadcastAllIncludingSender({ type: 'demo_control', action, payload, from });
   log('demo_control', `action=${action} from=${from}`);
@@ -175,12 +234,20 @@ function handleJson(socket, raw) {
 
   if (message.type === 'join') {
     const role = String(message.role || '').toLowerCase();
+    const tabId = message.tabId || `tab_${nextTabId++}`;
+    
     if (!validRoles.has(role)) { sendError(socket, 'Invalid role'); setTimeout(() => socket.destroy(), 25); return; }
-    if (roles.has(role)) { sendError(socket, `Role ${role} is already connected`); setTimeout(() => socket.destroy(), 25); return; }
-    sockets.set(socket, { role });
-    roles.set(role, socket);
-    log('join', role);
+    
+    // Allow multiple connections per role - just add to set
+    if (!roles.has(role)) {
+      roles.set(role, new Set());
+    }
+    roles.get(role).add(socket);
+    sockets.set(socket, { role, tabId });
+    
+    log('join', `${role} (tab ${tabId})`);
     broadcastRoster();
+    
     // If alice joins and there's already a session secret, re-send nothing (alice owns it)
     // If bob/eve joins after alice, send them the current session secret
     if ((role === 'bob' || role === 'eve') && demoState.sessionSecret) {
@@ -190,7 +257,18 @@ function handleJson(socket, raw) {
         payload: { secretHex: demoState.sessionSecret },
         from: 'alice',
       });
-      log('session_replay', `sent existing secret to ${role}`);
+      log('session_replay', `sent existing secret to ${role} (tab ${tabId})`);
+    }
+    
+    // Also send classical session key if exists
+    if ((role === 'bob' || role === 'eve') && demoState.classicalSessionKey) {
+      send(socket, {
+        type: 'demo_control',
+        action: 'classical_session_init',
+        payload: { secretHex: demoState.classicalSessionKey },
+        from: 'alice',
+      });
+      log('classical_session_replay', `sent classical key to ${role} (tab ${tabId})`);
     }
     return;
   }
@@ -260,12 +338,12 @@ server.listen(port, '0.0.0.0', () => {
   console.log('  ╔══════════════════════════════════════════════════╗');
   console.log('  ║        QuantumResist — Presentation Server       ║');
   console.log('  ╠══════════════════════════════════════════════════╣');
-  console.log(`  ║  Local:    http://localhost:${port}               ║`);
-  console.log(`  ║  LAN:      http://${lanIp}:${port}          ║`);
+  console.log(`  ║  Local:    http://localhost:${port}              ║`);
+  console.log(`  ║  LAN:      http://${lanIp}:${port}               ║`);
   console.log('  ╠══════════════════════════════════════════════════╣');
-  console.log(`  ║  Alice:  http://${lanIp}:${port}/?role=alice  ║`);
-  console.log(`  ║  Bob:    http://${lanIp}:${port}/?role=bob    ║`);
-  console.log(`  ║  Eve:    http://${lanIp}:${port}/?role=eve    ║`);
+  console.log(`  ║  Alice:  http://${lanIp}:${port}/?role=alice     ║`);
+  console.log(`  ║  Bob:    http://${lanIp}:${port}/?role=bob       ║`);
+  console.log(`  ║  Eve:    http://${lanIp}:${port}/?role=eve       ║`);
   console.log('  ╚══════════════════════════════════════════════════╝');
   console.log('');
 });

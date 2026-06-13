@@ -420,6 +420,232 @@ footer strong{color:#5b706f;font-weight:400}
 .diagram-close{display:block;margin:16px auto 0;padding:0 24px;height:38px;border:1px solid #1a2c30;border-radius:4px;background:transparent;color:#7a9499;font:9px var(--mono);cursor:pointer;transition:.2s}
 .diagram-close:hover{border-color:rgba(41,232,199,.3);color:var(--cyan)}
 
+/* ── Attack Demo Panel (Two-Column Comparison) ── */
+.attack-demo-panel {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1300px;
+  max-width: 90vw;
+  z-index: 45;
+  background: linear-gradient(145deg, #0a0e10, #070b0d);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+  display: none;
+  grid-template-rows: auto 1fr auto;
+  backdrop-filter: blur(8px);
+}
+
+.attack-demo-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line-soft);
+  background: rgba(0,0,0,0.3);
+  border-radius: 12px 12px 0 0;
+}
+
+.attack-demo-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cyan);
+  letter-spacing: 0.5px;
+}
+
+.attack-demo-close {
+  background: none;
+  border: none;
+  color: #54666b;
+  font-size: 28px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 8px;
+  transition: color 0.2s;
+}
+
+.attack-demo-close:hover {
+  color: var(--danger);
+}
+
+.attack-demo-two-column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+  min-height: 500px;
+}
+
+.attack-demo-classical,
+.attack-demo-pqc {
+  background: #0c1114;
+  padding: 20px;
+}
+
+.attack-demo-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.badge-danger {
+  background: rgba(255,102,110,0.15);
+  color: var(--danger);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 9px;
+  font-weight: 500;
+  font-family: var(--mono);
+}
+
+.badge-success {
+  background: rgba(41,232,199,0.12);
+  color: var(--cyan);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 9px;
+  font-weight: 500;
+  font-family: var(--mono);
+}
+
+.attack-demo-content {
+  min-height: 380px;
+}
+
+.attack-step-card {
+  background: #0a1012;
+  border: 1px solid #1a2c30;
+  border-radius: 8px;
+  padding: 16px;
+  transition: all 0.2s;
+}
+
+.attack-step-card.attack-broken {
+  border-color: rgba(255,102,110,0.4);
+  background: rgba(255,102,110,0.03);
+}
+
+.attack-step-card.attack-secure {
+  border-color: rgba(41,232,199,0.3);
+  background: rgba(41,232,199,0.02);
+}
+
+.step-title {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 14px;
+  color: #8fb3b0;
+}
+
+.step-detail {
+  font-size: 9px;
+  line-height: 1.8;
+  color: #7a9499;
+}
+
+.step-detail div {
+  margin-bottom: 8px;
+}
+
+.step-detail strong {
+  color: #bdd0ce;
+  font-weight: 500;
+}
+
+.key-visual {
+  font-family: var(--mono);
+  font-size: 7px;
+  background: #050809;
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 8px;
+  word-break: break-all;
+  color: #4a6165;
+}
+
+.cipher-demo {
+  font-family: var(--mono);
+  color: var(--cyan);
+  background: rgba(41,232,199,0.08);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.attack-result {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 6px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.attack-result.danger {
+  background: rgba(255,102,110,0.12);
+  color: var(--danger);
+  border: 1px solid rgba(255,102,110,0.2);
+}
+
+.attack-result.success {
+  background: rgba(41,232,199,0.08);
+  color: var(--cyan);
+  border: 1px solid rgba(41,232,199,0.2);
+}
+
+.attack-demo-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--line-soft);
+  background: rgba(0,0,0,0.2);
+  border-radius: 0 0 12px 12px;
+}
+
+.attack-step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 9px;
+  font-family: var(--mono);
+  color: #4a6165;
+}
+
+.step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: #0e1619;
+  border: 1px solid #1a2c30;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.step-dot.active {
+  background: rgba(41,232,199,0.15);
+  border-color: var(--cyan);
+  color: var(--cyan);
+  box-shadow: 0 0 12px rgba(41,232,199,0.2);
+}
+
+.step-dot.completed {
+  background: rgba(41,232,199,0.1);
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
 /* ── Animations ── */
 @keyframes pulse{50%{opacity:.35;box-shadow:0 0 2px var(--cyan)}}
 @keyframes bars{50%{height:4px;opacity:.4}}
@@ -456,13 +682,21 @@ main[data-active-view="keys"] .crypto-stack{display:block}
 main[data-active-view="keys"] .session-panel{display:none}
 main[data-active-view="keys"] .lower-grid{grid-template-columns:minmax(330px,420px);justify-content:center}
 
+main[data-active-view="eve"] .hero-row,
+main[data-active-view="eve"] .metrics-grid,
+main[data-active-view="eve"] .workspace-grid,
+main[data-active-view="eve"] .lower-grid,
+main[data-active-view="eve"] .signature-panel,
+main[data-active-view="eve"] footer {
+  display: none;
+}
+
 @media(max-width:1200px){
   main{padding-left:25px;padding-right:25px}
   .workspace-grid{grid-template-columns:minmax(560px,1.5fr) 330px}
   .connection-line{padding:0 8px}
   .metric-note{display:none}
 }
-
 
 /* ── Role-specific pipeline offset ── */
 body[data-role="eve"] .pipeline-overlay,
@@ -472,4 +706,98 @@ body[data-role="bob"] .pipeline-overlay {
 }
 body[data-role="eve"] .pipeline-overlay {
   left: 0;
+}
+
+/* Eve Attack Layout */
+.eve-attack-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100%;
+  min-height: calc(100vh - 72px - 40px);
+}
+
+.eve-monitor {
+  background: #0a0e10;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.eve-monitor-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(0,0,0,0.3);
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--cyan);
+}
+
+.eve-message-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 30px;
+  color: #4a6165;
+  font-size: 11px;
+}
+
+.intercept-item {
+  background: #0d1417;
+  border: 1px solid #1a2c30;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 8px;
+  transition: all 0.2s;
+}
+
+.intercept-item.selected {
+  border-color: var(--cyan);
+  background: rgba(41,232,199,0.05);
+}
+
+.intercept-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.intercept-epoch {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--cyan);
+}
+
+.intercept-time {
+  font-size: 7px;
+  color: #4a6165;
+}
+
+.intercept-cipher {
+  font-family: var(--mono);
+  font-size: 7px;
+  color: #7a9499;
+  word-break: break-all;
+  margin-bottom: 8px;
+}
+
+.intercept-select-btn {
+  background: rgba(41,232,199,0.1);
+  border: 1px solid rgba(41,232,199,0.2);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 7px;
+  color: var(--cyan);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.intercept-select-btn:hover {
+  background: rgba(41,232,199,0.2);
 }

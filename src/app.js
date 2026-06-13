@@ -6,9 +6,13 @@ import { initDemo3, handleDemo3Control } from './demos/demo3.js';
 import { initDemo4, handleDemo4Control } from './demos/demo4.js';
 import { initDemo5, handleDemo5Control } from './demos/demo5.js';
 import { initEveConsole } from './ui/eve-console.js';
+import { initAttackDemo, startAttackDemo, resetAttackDemo, attackStep } from './attack-demo.js';
 
 const VALID_ROLES = new Set(['alice', 'bob', 'eve']);
 const textDecoder = new TextDecoder();
+
+// Generate unique tab ID
+const TAB_ID = `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 const state = {
   role: null,
@@ -21,6 +25,10 @@ const state = {
   reconnectAttempts: 0,
   lastSendAt: null,
   attackMode: 'classical',
+  tabId: TAB_ID,
+  classicalSessionKey: null,
+  attackStep: 0,
+  attackPanelVisible: false,
 };
 
 const $ = id => document.getElementById(id) ?? document.querySelector(id);
@@ -65,7 +73,14 @@ function closeModal(modal) {
 function updateRoster(roles) {
   state.peers = roles;
   for (const role of ['alice', 'bob', 'eve']) {
-    document.getElementById('peer-' + role)?.classList.toggle('online', roles.includes(role));
+    const el = document.getElementById('peer-' + role);
+    if (el) {
+      if (roles.includes(role)) {
+        el.classList.add('online');
+      } else {
+        el.classList.remove('online');
+      }
+    }
   }
 }
 
@@ -137,7 +152,6 @@ function addSystemMessage(text) {
   msgEl.innerHTML += `<div class="system-message"><span></span> ${escapeHtml(text)} <time>${timeNow()}</time></div>`;
 }
 
-// ── Broadcast helper ──────────────────────────────────────────────────────────
 export function broadcastDemoControl(action, payload = {}) {
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
     console.warn('broadcastDemoControl: socket not open', action);
@@ -146,7 +160,6 @@ export function broadcastDemoControl(action, payload = {}) {
   state.socket.send(JSON.stringify({ type: 'demo_control', action, payload }));
 }
 
-// ── Send encrypted message (Alice only) ──────────────────────────────────────
 async function sendMessage(text) {
   const sharedKeyBytes = getSharedKeyBytes();
   if (state.role !== 'alice' || !state.socket || state.socket.readyState !== WebSocket.OPEN) {
@@ -167,7 +180,6 @@ async function sendMessage(text) {
   state.socket.send(JSON.stringify({ type: 'message', ciphertext: ciphertextHex, iv: ivHex, epoch: state.epoch, hmac }));
   state.lastSendAt = performance.now();
 
-  // Show pipeline overlay on Alice's screen
   handleDemo4Control({ action: 'pipeline_send', payload: { keyHex, ivHex, hmac, ciphertextHex, plaintext: text, epoch: state.epoch } });
 
   const row = document.createElement('div');
@@ -186,7 +198,6 @@ async function sendMessage(text) {
   showToast(`Encrypted · MK ${epochLabel(state.epoch - 1)} erased`);
 }
 
-// ── Bob receives relayed message ──────────────────────────────────────────────
 async function handleBobRelay(message) {
   const sharedKeyBytes = getSharedKeyBytes();
   if (!sharedKeyBytes) {
@@ -222,21 +233,17 @@ async function handleBobRelay(message) {
   }
 }
 
-// ── Eve receives relayed message ──────────────────────────────────────────────
 function handleEveRelay(message) {
   state.interceptCount += 1;
-  // Update eve epoch counter
   state.epoch = Math.max(state.epoch, Number(message.epoch || 1) + 1);
   document.dispatchEvent(new CustomEvent('eve:intercept', { detail: message }));
 }
 
-// ── Demo control dispatcher ───────────────────────────────────────────────────
 async function handleDemoControl(message) {
   const { action, payload, from } = message;
 
-  // session_init: Bob and Eve receive the shared secret from Alice
   if (action === 'session_init') {
-    if (state.role === 'alice') return; // Alice already has it
+    if (state.role === 'alice') return;
     receiveSessionSecret(payload.secretHex);
     await setSessionTelemetry();
     showToast('Session key received — synchronized');
@@ -246,7 +253,17 @@ async function handleDemoControl(message) {
     return;
   }
 
-  // Route to all demo modules — each checks the action internally
+  if (action === 'classical_session_init') {
+    state.classicalSessionKey = payload.secretHex;
+    showToast('Classical session key received for attack demo');
+    return;
+  }
+
+  if (action === 'attack_step') {
+    // Handle attack step sync if needed
+    return;
+  }
+
   await handleDemo1Control(message, state, broadcastDemoControl);
   await handleDemo2Control(message, state, broadcastDemoControl);
   await handleDemo3Control(message, state, broadcastDemoControl, setSessionTelemetry);
@@ -254,7 +271,6 @@ async function handleDemoControl(message) {
   handleDemo5Control(message, state);
 }
 
-// ── WebSocket ─────────────────────────────────────────────────────────────────
 function handleSocketMessage(event) {
   let message;
   try { message = JSON.parse(event.data); }
@@ -282,8 +298,8 @@ function connectWebSocket(onOpen) {
   socket.addEventListener('open', () => {
     state.reconnectAttempts = 0;
     setLatency(performance.now() - connectStartedAt);
-    socket.send(JSON.stringify({ type: 'join', role: state.role }));
-    showToast(`${state.role.toUpperCase()} connected`);
+    socket.send(JSON.stringify({ type: 'join', role: state.role, tabId: state.tabId }));
+    showToast(`${state.role.toUpperCase()} connected (tab ${state.tabId.slice(-6)})`);
     if (onOpen) onOpen();
   });
   socket.addEventListener('message', handleSocketMessage);
@@ -298,7 +314,6 @@ function scheduleReconnect() {
   setTimeout(() => connectWebSocket(), 2000);
 }
 
-// ── Role picker ───────────────────────────────────────────────────────────────
 function injectRolePicker() {
   const lanIp = location.hostname !== 'localhost' ? location.hostname : null;
   const baseUrl = `${location.protocol}//${location.host}`;
@@ -337,7 +352,6 @@ function injectRolePicker() {
   });
 }
 
-// ── Role-specific UI config ───────────────────────────────────────────────────
 function configureRoleUi() {
   document.body.dataset.role = state.role;
   const brandEl = $q('.brand');
@@ -352,10 +366,9 @@ function configureRoleUi() {
   if (state.role === 'eve') {
     renderEveLayout();
   } else {
-    // Clear messages for alice/bob
     const msgEl = document.getElementById('messages');
     if (msgEl) msgEl.innerHTML = '';
-    addSystemMessage(`${state.role.toUpperCase()} joined the LAN presentation`);
+    addSystemMessage(`${state.role.toUpperCase()} joined the LAN presentation (${state.tabId.slice(-6)})`);
   }
 }
 
@@ -367,7 +380,6 @@ function renderEveLayout() {
   initEveConsole(document.getElementById('eve-console-mount'), state, broadcastDemoControl);
 }
 
-// ── Session reset ─────────────────────────────────────────────────────────────
 function resetSession() {
   state.epoch = 1;
   state.messageCount = 0;
@@ -380,7 +392,6 @@ function resetSession() {
   showToast('Session counters reset');
 }
 
-// ── Signature verification ────────────────────────────────────────────────────
 async function runSignatureVerification(valid = true) {
   const log = document.getElementById('signatureLog');
   const verifyBtn = document.getElementById('verifySignature');
@@ -409,7 +420,6 @@ async function runSignatureVerification(valid = true) {
   verifyBtn.disabled = tamperBtn.disabled = false;
 }
 
-// ── Key derivation reveal ─────────────────────────────────────────────────────
 async function playKeyDerivationReveal() {
   await setKeyInspector();
   const steps = $$('[data-key-step]');
@@ -422,7 +432,6 @@ async function playKeyDerivationReveal() {
   }
 }
 
-// ── Attack modal ──────────────────────────────────────────────────────────────
 async function typeTerminalLine(terminal, line, cls = '') {
   const item = document.createElement('div');
   item.className = cls;
@@ -457,9 +466,7 @@ async function runAttackDemo() {
   launch.disabled = false;
 }
 
-// ── Event bindings ────────────────────────────────────────────────────────────
 function bindEvents() {
-  // Message form (Alice only — hidden for Bob, not rendered for Eve)
   $q('#messageForm')?.addEventListener('submit', async event => {
     event.preventDefault();
     const input = document.getElementById('messageInput');
@@ -533,9 +540,20 @@ function bindEvents() {
     if (mainEl) mainEl.dataset.activeView = btn.dataset.view;
     $q('main')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }));
+
+  window.addEventListener('attack-step-change', (e) => {
+    if (state.role === 'eve') {
+      attackStep(e.detail.step);
+    }
+  });
+  
+  window.addEventListener('attack-reset', () => {
+    if (state.role === 'eve') {
+      resetAttackDemo();
+    }
+  });
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   const role = new URLSearchParams(location.search).get('role');
   if (!VALID_ROLES.has(role)) { injectRolePicker(); return; }
@@ -544,22 +562,29 @@ async function main() {
   configureRoleUi();
   bindEvents();
 
-  // Init demo modules (all roles — they check internally what to show)
   initDemo1(state, broadcastDemoControl);
   initDemo2(state, broadcastDemoControl);
   initDemo3(state, broadcastDemoControl);
   initDemo4(state);
   initDemo5(state, broadcastDemoControl);
+  initAttackDemo(state, broadcastDemoControl);
 
   if (role === 'alice') {
-    // Alice generates the session secret, then connects and broadcasts it on open
     const { secretHex } = await generateSessionSecret();
+    const classicalBytes = new Uint8Array(32);
+    crypto.getRandomValues(classicalBytes);
+    const classicalSecretHex = toHex(classicalBytes);
+    
     connectWebSocket(() => {
-      // Broadcast session_init as soon as socket is open
       state.socket.send(JSON.stringify({
         type: 'demo_control',
         action: 'session_init',
         payload: { secretHex },
+      }));
+      state.socket.send(JSON.stringify({
+        type: 'demo_control',
+        action: 'classical_session_init',
+        payload: { secretHex: classicalSecretHex },
       }));
       const fpEl = document.getElementById('fingerprint');
       const kb = getSharedKeyBytes();
@@ -577,7 +602,6 @@ async function main() {
       addSystemMessage('BOB waiting for session key from Alice…');
     });
   } else {
-    // Eve — no shared key
     connectWebSocket(() => {
       updateRoster([]);
     });
