@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="QuantumResist — an interactive post-quantum secure communications demonstration." />
+    <title>QuantumResist — Post-Quantum Secure Communications</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="QuantumResist home">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <span>QUANTUM<span>RESIST</span></span>
+        </a>
+        <div class="topbar-status">
+          <span class="network-dot"></span>
+          <span>Secure network</span>
+          <span class="divider"></span>
+          <span id="headerLatency">pending</span>
+        </div>
+        <div class="peer-roster" id="peerRoster">
+          <div class="peer-roster-dot" id="peer-alice"><i></i><span>ALICE</span></div>
+          <div class="peer-roster-dot" id="peer-bob"><i></i><span>BOB</span></div>
+          <div class="peer-roster-dot" id="peer-eve"><i></i><span>EVE</span></div>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-button" id="soundToggle" aria-label="Toggle sound">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5Zm4.5 3.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg>
+          </button>
+          <div class="live-pill"><span></span> LIVE DEMO</div>
+        </div>
+      </header>
+
+      <aside class="sidebar">
+        <nav aria-label="Primary navigation">
+          <p class="nav-label">WORKSPACE</p>
+          <button class="nav-item active" data-view="dashboard">
+            <svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg>
+            Overview
+          </button>
+          <button class="nav-item" data-view="messages">
+            <svg viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z"/></svg>
+            Secure channel
+            <span class="nav-count" id="messageCount">0</span>
+          </button>
+          <button class="nav-item" data-view="keys">
+            <svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8m-3 3 3 3m-6 0 3 3"/></svg>
+            Key lifecycle
+          </button>
+          <p class="nav-label second">SIMULATION</p>
+          <button class="nav-item" id="attackNav">
+            <svg viewBox="0 0 24 24"><path d="M12 2 3 6v5c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V6l-9-4Z"/><path d="m9 9 6 6m0-6-6 6"/></svg>
+            Attack lab
+          </button>
+          <button class="nav-item" id="resetNav">
+            <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+            Reset session
+          </button>
+        </nav>
+        <div class="sidebar-card">
+          <div class="sidebar-card-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 2 3 6v5c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V6l-9-4Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+          </div>
+          <div><strong>Protected</strong><span>NIST PQC enabled</span></div>
+        </div>
+        <div class="sidebar-footer">v1.0.0 · DEMO BUILD</div>
+      </aside>
+
+      <main data-active-view="dashboard">
+        <section class="hero-row">
+          <div>
+            <div class="eyebrow"><span></span> POST-QUANTUM COMMAND CENTER</div>
+            <h1>Secure communication.<br><em>Beyond the quantum era.</em></h1>
+            <p class="hero-copy">A live reference implementation of NIST-standardized post-quantum cryptography, forward secrecy, and continuous key evolution.</p>
+          </div>
+          <button class="attack-button" id="attackButton">
+            <span class="attack-icon"><svg viewBox="0 0 24 24"><path d="M12 2v4m0 12v4M4.9 4.9l2.8 2.8m8.6 8.6 2.8 2.8M2 12h4m12 0h4M4.9 19.1l2.8-2.8m8.6-8.6 2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg></span>
+            <span><small>LAUNCH SIMULATION</small>Quantum attack</span>
+            <svg class="arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </section>
+
+        <section class="metrics-grid" aria-label="Security metrics">
+          <article class="metric-card">
+            <div class="metric-icon cyan"><svg viewBox="0 0 24 24"><path d="M12 2 3 6v5c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V6l-9-4Z"/></svg></div>
+            <div><span class="metric-label">SECURITY STATUS</span><strong class="status-value"><i></i> Quantum resistant</strong></div>
+            <span class="metric-tag">ACTIVE</span>
+          </article>
+          <article class="metric-card">
+            <div class="metric-icon purple"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8m-3 3 3 3m-6 0 3 3"/></svg></div>
+            <div><span class="metric-label">SESSION KEYS</span><strong id="keyCount">001</strong></div>
+            <span class="metric-note">Rotating per message</span>
+          </article>
+          <article class="metric-card">
+            <div class="metric-icon green"><svg viewBox="0 0 24 24"><path d="M4 17V7m5 13V4m6 13V7m5 13V4"/></svg></div>
+            <div><span class="metric-label">CHANNEL LATENCY</span><strong id="latencyMetric">pending</strong></div>
+            <span class="sparkline"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+          </article>
+        </section>
+
+        <section class="workspace-grid">
+          <article class="panel secure-channel">
+            <div class="panel-header">
+              <div><span class="panel-kicker">ENCRYPTED LINK</span><h2>Secure channel</h2></div>
+              <div class="connected"><i></i> CONNECTED</div>
+            </div>
+            <div class="participants">
+              <div class="participant">
+                <div class="avatar alice">A<span></span></div>
+                <div><strong>Alice</strong><span>Sender · Laptop A</span></div>
+              </div>
+              <div class="connection-line"><i></i><span>END-TO-END ENCRYPTED</span><i></i></div>
+              <div class="participant right">
+                <div><strong>Bob</strong><span>Receiver · Laptop B</span></div>
+                <div class="avatar bob">B<span></span></div>
+              </div>
+            </div>
+            <div class="messages" id="messages" aria-live="polite"></div>
+            <form class="composer" id="messageForm">
+              <button type="button" class="attach" aria-label="Attach file"><svg viewBox="0 0 24 24"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2A2 2 0 0 1 7 14.8l8.5-8.5"/></svg></button>
+              <input id="messageInput" maxlength="180" autocomplete="off" placeholder="Type a secure message..." aria-label="Secure message" />
+              <div class="composer-security"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> AES-256-GCM</div>
+              <button class="send-button" type="submit" aria-label="Send encrypted message"><svg viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/></svg></button>
+            </form>
+          </article>
+
+          <aside class="panel crypto-stack">
+            <div class="panel-header compact"><div><span class="panel-kicker">LIVE TELEMETRY</span><h2>Cryptographic stack</h2></div><span class="pulse-bars"><i></i><i></i><i></i></span></div>
+            <div class="stack-item active-stage">
+              <div class="stack-number">01</div><div class="stack-main"><span>KEY ENCAPSULATION</span><strong>ML-KEM-1024</strong><small>FIPS 203 · Lattice-based</small></div><div class="stack-check">✓</div>
+            </div>
+            <div class="stack-connector"><span></span></div>
+            <div class="stack-item">
+              <div class="stack-number">02</div><div class="stack-main"><span>KEY DERIVATION</span><strong>HMAC-SHA-256</strong><small>PBKDF2 → HMAC labels</small></div><div class="stack-check">✓</div>
+            </div>
+            <div class="stack-connector"><span></span></div>
+            <div class="stack-item">
+              <div class="stack-number">03</div><div class="stack-main"><span>KEY EVOLUTION</span><strong>Double Ratchet</strong><small id="ratchetLabel">Epoch 001 · Synchronized</small></div><div class="stack-check">✓</div>
+            </div>
+            <div class="stack-connector"><span></span></div>
+            <div class="stack-item">
+              <div class="stack-number">04</div><div class="stack-main"><span>AUTHENTICATED ENCRYPTION</span><strong>AES-256-GCM</strong><small>256-bit · Hardware accelerated</small></div><div class="stack-check">✓</div>
+            </div>
+            <div class="stack-connector"><span></span></div>
+            <div class="stack-item">
+              <div class="stack-number">05</div><div class="stack-main"><span>DIGITAL SIGNATURE</span><strong>ML-DSA-87</strong><small>FIPS 204 · Identity verified</small></div><div class="stack-check">✓</div>
+            </div>
+            <button class="inspect-button" id="inspectButton">Inspect session keys <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+          </aside>
+        </section>
+
+        <section class="lower-grid">
+          <article class="panel ratchet-panel">
+            <div class="panel-header compact"><div><span class="panel-kicker">FORWARD SECRECY</span><h2>Key ratchet</h2></div><div class="epoch" id="epochBadge">EPOCH 001</div></div>
+            <div class="ratchet-flow" id="ratchetFlow">
+              <div class="key-node destroyed"><span>MK−2</span><strong>DELETED</strong></div><i></i>
+              <div class="key-node destroyed"><span>MK−1</span><strong>DELETED</strong></div><i></i>
+              <div class="key-node current"><span>MK 001</span><strong>ACTIVE</strong></div><i class="dashed"></i>
+              <div class="key-node future"><span>MK 002</span><strong>LOCKED</strong></div>
+            </div>
+            <div class="ratchet-footer"><span><i></i> Previous message keys securely erased</span><span>Next rotation: <strong>on send</strong></span></div>
+          </article>
+          <article class="panel session-panel">
+            <div class="panel-header compact"><div><span class="panel-kicker">SESSION DETAILS</span><h2>Security posture</h2></div><button class="more-button" aria-label="More options">•••</button></div>
+            <div class="posture-grid">
+              <div><span>KEY EXCHANGE</span><strong>ML-KEM-1024</strong></div><div><span>SIGNATURE</span><strong>ML-DSA-87</strong></div>
+              <div><span>ENCRYPTION</span><strong>AES-256-GCM</strong></div><div><span>FORWARD SECRECY</span><strong class="enabled"><i></i> ENABLED</strong></div>
+            </div>
+            <div class="fingerprint"><span>SESSION FINGERPRINT</span><code id="fingerprint">DERIVING</code><button id="copyFingerprint" aria-label="Copy fingerprint"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h4"/></svg></button></div>
+          </article>
+        </section>
+
+        <article class="panel signature-panel">
+          <div class="panel-header compact"><div><span class="panel-kicker">IDENTITY AUTHENTICATION</span><h2>Signature verification</h2></div><div class="connected"><i></i> ML-DSA-87</div></div>
+          <div class="signature-demo">
+            <label for="signedMessage">Signed message (Alice → Bob)</label>
+            <div class="signature-controls">
+              <input id="signedMessage" type="text" value="" autocomplete="off" />
+              <button id="verifySignature" type="button">Verify signature</button>
+              <button id="tamperSignature" type="button">Tamper message</button>
+              <button id="resetSignature" type="button">Reset</button>
+            </div>
+            <div class="signature-terminal" id="signatureLog" aria-live="polite"><div><span>sig@demo:~$</span> Waiting for runtime payload.</div></div>
+          </div>
+        </article>
+
+        <footer><span><i></i> All systems operational</span><span>Educational reference implementation · Quantum attacks are simulated</span><span>Last handshake: <strong id="handshakeTime">just now</strong></span></footer>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="attackModal" role="dialog" aria-modal="true" aria-labelledby="attackTitle" hidden>
+      <div class="modal attack-modal">
+        <button class="modal-close" data-close aria-label="Close">×</button>
+        <div class="modal-icon danger"><svg viewBox="0 0 24 24"><path d="M12 2v4m0 12v4M4.9 4.9l2.8 2.8m8.6 8.6 2.8 2.8M2 12h4m12 0h4M4.9 19.1l2.8-2.8m8.6-8.6 2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <span class="modal-kicker">EDUCATIONAL SIMULATION</span>
+        <h2 id="attackTitle">Quantum attack laboratory</h2>
+        <p>Compare how a cryptographically relevant quantum computer would affect classical and post-quantum systems.</p>
+        <div class="attack-comparison" aria-label="Classical versus post-quantum attack status">
+          <div class="legacy"><strong>RSA-2048</strong><span>VULNERABLE</span><small>Shor's: YES</small></div>
+          <div class="resistant"><strong>ML-KEM-1024</strong><span>SECURE</span><small>Shor's: NO</small></div>
+        </div>
+        <div class="mode-toggle"><button class="active" data-mode="classical">RSA-2048</button><button data-mode="pqc">ML-KEM-1024</button></div>
+        <div class="terminal" id="attackTerminal"><div><span>quantum@lab:~$</span> Select a target, then launch the simulation.</div></div>
+        <button class="launch-button" id="launchAttack">Launch simulated attack <svg viewBox="0 0 24 24"><path d="m5 12 14 0m-6-6 6 6-6 6"/></svg></button>
+        <small class="disclaimer">No quantum computation occurs. This simulation demonstrates known algorithmic implications: Shor’s algorithm threatens RSA, while no efficient quantum attack is known for ML-KEM.</small>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="keyModal" role="dialog" aria-modal="true" aria-labelledby="keyTitle" hidden>
+      <div class="modal key-modal">
+        <button class="modal-close" data-close aria-label="Close">×</button>
+        <span class="modal-kicker">EPHEMERAL SESSION MATERIAL</span><h2 id="keyTitle">Key derivation inspector</h2>
+        <div class="key-path" id="keyPath">
+          <div class="key-step" data-key-step><span>ML-KEM SHARED SECRET</span><code id="sharedKey">DERIVING</code></div><b class="key-arrow" data-key-step>↓ <small>HMAC-SHA-256</small></b>
+          <div class="key-step" data-key-step><span>ROOT KEY</span><code id="rootKey">DERIVING</code></div><b class="key-arrow" data-key-step>↓ <small>HMAC-SHA-256 LABEL</small></b>
+          <div class="key-step" data-key-step><span>MESSAGE KEY <i id="modalEpoch">001</i></span><code id="messageKey">DERIVING</code></div>
+        </div>
+        <div class="key-warning"><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.7 2.4 18a2 2 0 0 0 1.8 3h15.6a2 2 0 0 0 1.8-3L13.7 3.7a2 2 0 0 0-3.4 0Z"/></svg> Values are computed at runtime from Web Crypto session material.</div>
+        <button class="launch-button safe" id="revealKeys">Reveal demo values</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"><span>✓</span><p>Fingerprint copied</p></div>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

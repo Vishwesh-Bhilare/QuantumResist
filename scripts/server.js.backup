@@ -1,0 +1,298 @@
+import { createHash } from 'node:crypto';
+import { createReadStream, statSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { networkInterfaces } from 'node:os';
+import { extname, join, normalize } from 'node:path';
+
+const root = process.cwd();
+const port = Number(process.env.PORT || 4173);
+const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+const wsGuid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+const validRoles = new Set(['alice', 'bob', 'eve']);
+
+// Role → Set of sockets
+const roles = new Map();
+// Socket → metadata
+const sockets = new Map();
+let nextTabId = 1;
+
+// Store last N messages for Eve
+const MESSAGE_HISTORY_LIMIT = 10;
+let messageHistory = [];
+
+// Demo state
+const demoState = {
+  sessionSecret: null,
+  classicalSessionKey: null,
+};
+
+function getLanIp() {
+  const nets = networkInterfaces();
+  for (const interfaces of Object.values(nets)) {
+    for (const iface of interfaces) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return 'localhost';
+}
+
+const server = createServer((req, res) => {
+  const pathname = decodeURIComponent(new URL(req.url, `http://${req.headers.host}`).pathname);
+  const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '');
+  const target = normalize(join(root, relative));
+  if (!target.startsWith(root)) { res.writeHead(403).end('Forbidden'); return; }
+  try {
+    if (!statSync(target).isFile()) throw new Error();
+    res.writeHead(200, { 'content-type': mime[extname(target)] || 'application/octet-stream', 'cache-control': 'no-store' });
+    createReadStream(target).pipe(res);
+  } catch {
+    res.writeHead(404).end('Not found');
+  }
+});
+
+function log(event, details = '') {
+  console.log(`[${new Date().toISOString()}] ${event}${details ? ` ${details}` : ''}`);
+}
+
+function frameJson(payload) {
+  const body = Buffer.from(JSON.stringify(payload));
+  if (body.length < 126) return Buffer.concat([Buffer.from([0x81, body.length]), body]);
+  if (body.length < 65536) {
+    const header = Buffer.alloc(4);
+    header[0] = 0x81; header[1] = 126;
+    header.writeUInt16BE(body.length, 2);
+    return Buffer.concat([header, body]);
+  }
+  const header = Buffer.alloc(10);
+  header[0] = 0x81; header[1] = 127;
+  header.writeBigUInt64BE(BigInt(body.length), 2);
+  return Buffer.concat([header, body]);
+}
+
+function send(socket, payload) {
+  if (socket.destroyed || !socket.writable) return;
+  try { socket.write(frameJson(payload)); }
+  catch (error) { log('send-error', error.message); }
+}
+
+function sendError(socket, message) {
+  log('error', message);
+  send(socket, { type: 'error', message });
+}
+
+function sendToRole(role, payload, excludeSocket = null) {
+  const socketsSet = roles.get(role);
+  if (!socketsSet) return;
+  for (const sock of socketsSet) {
+    if (sock !== excludeSocket && !sock.destroyed) send(sock, payload);
+  }
+}
+
+function sendToAll(payload) {
+  for (const socketsSet of roles.values()) {
+    for (const sock of socketsSet) {
+      if (!sock.destroyed) send(sock, payload);
+    }
+  }
+}
+
+function broadcastRoster() {
+  const online = [...roles.keys()];
+  const payload = { type: 'roster', roles: online };
+  for (const socketsSet of roles.values()) {
+    for (const sock of socketsSet) {
+      if (!sock.destroyed) send(sock, payload);
+    }
+  }
+}
+
+function cleanup(socket) {
+  const meta = sockets.get(socket);
+  if (!meta) return;
+  sockets.delete(socket);
+  if (meta.role) {
+    const socketsSet = roles.get(meta.role);
+    if (socketsSet) {
+      socketsSet.delete(socket);
+      if (socketsSet.size === 0) roles.delete(meta.role);
+    }
+    log('disconnect', `${meta.role} (tab ${meta.tabId})`);
+    broadcastRoster();
+  }
+}
+
+async function relayFromAlice(socket, message) {
+  const meta = sockets.get(socket);
+  if (meta?.role !== 'alice') { sendError(socket, 'Only Alice can relay messages'); return; }
+
+  const { ciphertext, iv, epoch, hmac, plaintext } = message;
+  if (!plaintext) {
+    sendError(socket, 'Missing plaintext for demo storage');
+    return;
+  }
+
+  // Store in history (classical part will be added later if needed)
+  const entry = {
+    plaintext,
+    pqcCiphertext: ciphertext,
+    pqcIV: iv,
+    pqcHMAC: hmac,
+    pqcEpoch: epoch,
+    classicalCiphertext: null,
+    classicalIV: null,
+    classicalHMAC: null,
+    timestamp: Date.now(),
+  };
+  messageHistory.unshift(entry);
+  if (messageHistory.length > MESSAGE_HISTORY_LIMIT) messageHistory.pop();
+
+  const relayPayload = { type: 'relayed', from: 'alice', ciphertext, iv, epoch, hmac };
+  for (const role of ['bob', 'eve']) {
+    sendToRole(role, relayPayload);
+  }
+
+  log('relay', `epoch=${epoch} plaintext="${plaintext}"`);
+}
+
+function handleDemoControl(socket, message) {
+  const meta = sockets.get(socket);
+  const from = meta?.role || 'unknown';
+  const action = String(message.action || '');
+  const payload = message.payload || {};
+
+  if (action === 'session_init') {
+    if (from !== 'alice') { sendError(socket, 'Only Alice can init session'); return; }
+    demoState.sessionSecret = payload.secretHex;
+    log('session_init', `secret=${payload.secretHex?.slice(0,16)}...`);
+    for (const role of ['bob', 'eve']) {
+      sendToRole(role, { type: 'demo_control', action: 'session_init', payload, from: 'alice' });
+    }
+    return;
+  }
+
+  if (action === 'classical_session_init') {
+    if (from !== 'alice') { sendError(socket, 'Only Alice can init classical session'); return; }
+    demoState.classicalSessionKey = payload.secretHex;
+    log('classical_session_init', `key=${payload.secretHex?.slice(0,16)}...`);
+    for (const role of ['bob', 'eve']) {
+      sendToRole(role, { type: 'demo_control', action: 'classical_session_init', payload, from: 'alice' });
+    }
+    return;
+  }
+
+  sendToAll({ type: 'demo_control', action, payload, from });
+  log('demo_control', `action=${action} from=${from}`);
+}
+
+function handleJson(socket, raw) {
+  let message;
+  try { message = JSON.parse(raw); }
+  catch { sendError(socket, 'Invalid JSON'); setTimeout(() => socket.destroy(), 25); return; }
+
+  if (message.type === 'join') {
+    const role = String(message.role || '').toLowerCase();
+    const tabId = message.tabId || `tab_${nextTabId++}`;
+    if (!validRoles.has(role)) { sendError(socket, 'Invalid role'); return; }
+    if (!roles.has(role)) roles.set(role, new Set());
+    roles.get(role).add(socket);
+    sockets.set(socket, { role, tabId });
+    log('join', `${role} (${tabId})`);
+    broadcastRoster();
+
+    if ((role === 'bob' || role === 'eve') && demoState.sessionSecret) {
+      send(socket, { type: 'demo_control', action: 'session_init', payload: { secretHex: demoState.sessionSecret }, from: 'alice' });
+    }
+    if ((role === 'bob' || role === 'eve') && demoState.classicalSessionKey) {
+      send(socket, { type: 'demo_control', action: 'classical_session_init', payload: { secretHex: demoState.classicalSessionKey }, from: 'alice' });
+    }
+
+    // Replay message history for Eve
+    if (role === 'eve' && messageHistory.length > 0) {
+      for (const entry of messageHistory) {
+        send(socket, {
+          type: 'relayed',
+          ciphertext: entry.pqcCiphertext,
+          iv: entry.pqcIV,
+          hmac: entry.pqcHMAC,
+          epoch: entry.pqcEpoch,
+          from: 'alice',
+        });
+      }
+      log('history_replay', `sent ${messageHistory.length} messages to Eve`);
+    }
+    return;
+  }
+
+  if (message.type === 'message') { relayFromAlice(socket, message); return; }
+  if (message.type === 'demo_control') { handleDemoControl(socket, message); return; }
+  sendError(socket, `Unknown message type: ${message.type}`);
+}
+
+function parseFrames(socket, chunk) {
+  const meta = sockets.get(socket) || { role: null, buffer: Buffer.alloc(0) };
+  meta.buffer = Buffer.concat([meta.buffer || Buffer.alloc(0), chunk]);
+  sockets.set(socket, meta);
+
+  while (meta.buffer.length >= 2) {
+    const first = meta.buffer[0];
+    const second = meta.buffer[1];
+    const opcode = first & 0x0f;
+    const fin = (first & 0x80) !== 0;
+    const masked = (second & 0x80) !== 0;
+    let length = second & 0x7f;
+    let offset = 2;
+
+    if (!fin || opcode !== 0x1) { sendError(socket, 'Only unfragmented text frames are supported'); setTimeout(() => socket.destroy(), 25); return; }
+    if (!masked) { sendError(socket, 'Client frames must be masked'); setTimeout(() => socket.destroy(), 25); return; }
+    if (length === 126) {
+      if (meta.buffer.length < offset + 2) return;
+      length = meta.buffer.readUInt16BE(offset); offset += 2;
+    } else if (length === 127) {
+      if (meta.buffer.length < offset + 8) return;
+      const bigLength = meta.buffer.readBigUInt64BE(offset);
+      if (bigLength > BigInt(Number.MAX_SAFE_INTEGER)) { sendError(socket, 'Frame too large'); setTimeout(() => socket.destroy(), 25); return; }
+      length = Number(bigLength); offset += 8;
+    }
+
+    if (meta.buffer.length < offset + 4 + length) return;
+    const mask = meta.buffer.subarray(offset, offset + 4); offset += 4;
+    const payload = Buffer.from(meta.buffer.subarray(offset, offset + length));
+    for (let index = 0; index < payload.length; index += 1) payload[index] ^= mask[index % 4];
+    meta.buffer = meta.buffer.subarray(offset + length);
+    handleJson(socket, payload.toString('utf8'));
+  }
+}
+
+server.on('upgrade', (request, socket) => {
+  const key = request.headers['sec-websocket-key'];
+  if (!key) { socket.destroy(); return; }
+  const accept = createHash('sha1').update(`${key}${wsGuid}`).digest('base64');
+  socket.write([
+    'HTTP/1.1 101 Switching Protocols',
+    'Upgrade: websocket',
+    'Connection: Upgrade',
+    `Sec-WebSocket-Accept: ${accept}`,
+    '', '',
+  ].join('\r\n'));
+  sockets.set(socket, { role: null, buffer: Buffer.alloc(0) });
+  socket.on('data', chunk => parseFrames(socket, chunk));
+  socket.on('close', () => cleanup(socket));
+  socket.on('end', () => cleanup(socket));
+  socket.on('error', error => { log('error', error.message); cleanup(socket); });
+});
+
+const lanIp = getLanIp();
+server.listen(port, '0.0.0.0', () => {
+  console.log('');
+  console.log('  ╔══════════════════════════════════════════════════╗');
+  console.log('  ║        QuantumResist — Presentation Server       ║');
+  console.log('  ╠══════════════════════════════════════════════════╣');
+  console.log(`  ║  Local:    http://localhost:${port}              ║`);
+  console.log(`  ║  LAN:      http://${lanIp}:${port}               ║`);
+  console.log('  ╠══════════════════════════════════════════════════╣');
+  console.log(`  ║  Alice:  http://${lanIp}:${port}/?role=alice     ║`);
+  console.log(`  ║  Bob:    http://${lanIp}:${port}/?role=bob       ║`);
+  console.log(`  ║  Eve:    http://${lanIp}:${port}/?role=eve       ║`);
+  console.log('  ╚══════════════════════════════════════════════════╝');
+  console.log('');
+});
