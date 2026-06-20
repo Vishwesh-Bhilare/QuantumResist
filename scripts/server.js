@@ -155,13 +155,14 @@ function relayFromAlice(socket, message) {
   }
   // Store harvested message with plaintext (for Demo2)
   demoState.harvestedMessage = {
-    ciphertext: message.ciphertext,
-    iv: message.iv,
-    epoch: message.epoch,
-    hmac: message.hmac,
-    plaintext: message.plaintext || '(no plaintext stored)',
-    harvestedAt: Date.now(),
-  };
+		ciphertext: message.ciphertext,
+		iv: message.iv,
+		epoch: message.epoch,
+		hmac: message.hmac,
+		plaintext: message.plaintext || '(no plaintext stored)',
+		rsaCiphertext: message.rsaCiphertext || null,
+		harvestedAt: Date.now(),
+   };
   const payload = {
     type: 'relayed',
     from: 'alice',

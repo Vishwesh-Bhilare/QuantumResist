@@ -23,6 +23,7 @@ import {
 import {
   initDemo1,
   handleDemo1Control,
+  getRSAKeyPair,
 } from './demos/demo1.js';
 import {
   initDemo2,
@@ -139,6 +140,9 @@ function setLatency(ms) {
 async function setSessionTelemetry() {
   const sharedKeyBytes = getSharedKeyBytes();
   const currentEpoch = getCurrentEpoch();
+
+  state.epoch = currentEpoch;
+
   const keyCountEl = document.getElementById('keyCount');
   const ratchetLabelEl = document.getElementById('ratchetLabel');
   const epochBadgeEl = document.getElementById('epochBadge');
@@ -164,14 +168,14 @@ async function updateRatchetFlow() {
   const flowEl = document.getElementById('ratchetFlow');
   if (!flowEl) return;
 
-  const current = getCurrentEpoch(); // 0‑based next expected
-  const deleted = getDeletedEpochs(); // array of deleted epoch numbers (0‑based)
+  const current = getCurrentEpoch();
+  const deleted = getDeletedEpochs();
   const nodes = [];
 
   for (let e = Math.max(0, current - 3); e <= current + 2; e++) {
     const isDeleted = deleted.includes(e);
     const isCurrent = e === current;
-    const epochLabelNum = e + 1; // display 1‑based
+    const epochLabelNum = e + 1;
 
     if (isDeleted) {
       nodes.push(
@@ -224,6 +228,34 @@ function addSystemMessage(text) {
 }
 
 // ----------------------------------------------------------------------
+//  RSA encryption helper for Demo 2
+// ----------------------------------------------------------------------
+async function encryptWithRSA(plaintext, publicKeyJwk) {
+  try {
+    const publicKey = await crypto.subtle.importKey(
+      'jwk',
+      publicKeyJwk,
+      { name: 'RSA-OAEP', hash: 'SHA-256' },
+      false,
+      ['encrypt']
+    );
+    
+    const encoder = new TextEncoder();
+    const plaintextBytes = encoder.encode(plaintext);
+    const encrypted = await crypto.subtle.encrypt(
+      { name: 'RSA-OAEP' },
+      publicKey,
+      plaintextBytes
+    );
+    
+    return toHex(new Uint8Array(encrypted));
+  } catch (error) {
+    console.error('RSA encryption failed:', error);
+    return null;
+  }
+}
+
+// ----------------------------------------------------------------------
 //  WebSocket communication
 // ----------------------------------------------------------------------
 export function broadcastDemoControl(action, payload = {}) {
@@ -254,14 +286,27 @@ async function sendMessage(text) {
 
   try {
     const currentEpoch = getCurrentEpoch();
-    // Derive message key for current epoch (does NOT advance ratchet)
+    
     const { keyBytes, keyHex } = await deriveMessageKey(currentEpoch);
     const { iv, encrypted } = await encryptMessage(text, keyBytes);
     const hmac = await signHmac(encrypted, keyBytes);
     const ciphertextHex = toHex(encrypted);
     const ivHex = toHex(iv);
+    
+    let rsaCiphertext = null;
+    const rsaKeyPair = getRSAKeyPair();
+    if (rsaKeyPair && rsaKeyPair.publicKey) {
+      try {
+        const publicKeyJwk = await crypto.subtle.exportKey('jwk', rsaKeyPair.publicKey);
+        rsaCiphertext = await encryptWithRSA(text, publicKeyJwk);
+        if (rsaCiphertext) {
+          console.log(`RSA encrypted copy created for epoch ${currentEpoch}`);
+        }
+      } catch (err) {
+        console.warn('Failed to create RSA encrypted copy:', err);
+      }
+    }
 
-    // Send encrypted payload (plaintext included only for demo storage)
     state.socket.send(
       JSON.stringify({
         type: 'message',
@@ -270,24 +315,25 @@ async function sendMessage(text) {
         epoch: currentEpoch,
         hmac,
         plaintext: text,
+        rsaCiphertext: rsaCiphertext,
       })
     );
     state.lastSendAt = performance.now();
 
-    // Trigger demo4 pipeline (sender side)
     handleDemo4Control({
       action: 'pipeline_send',
       payload: { keyHex, ivHex, hmac, ciphertextHex, plaintext: text, epoch: currentEpoch },
     });
 
-    // Update UI: add sent message bubble
     const row = document.createElement('div');
     row.className = 'message-row sent';
     row.innerHTML = `<div class="bubble"><p>${escapeHtml(text)}</p><div><span class="cipher-preview">${truncateCiphertext(encrypted)}</span><span>ML-DSA ✓ · HMAC ✓</span><time>${timeNow()}</time></div></div>`;
-    document.getElementById('messages')?.append(row);
-    document.getElementById('messages')?.scrollTo({ top: 999999, behavior: 'smooth' });
+    const messagesEl = document.getElementById('messages');
+    if (messagesEl) {
+      messagesEl.appendChild(row);
+      messagesEl.scrollTo({ top: 999999, behavior: 'smooth' });
+    }
 
-    // Advance ratchet once after message is sent
     await advanceRatchet();
     state.messageCount++;
     const msgCountEl = document.getElementById('messageCount');
@@ -312,17 +358,18 @@ async function handleBobRelay(message) {
     return;
   }
 
-  // Show pending bubble
   const row = document.createElement('div');
   row.className = 'message-row received';
   row.innerHTML = `<div class="mini-avatar">A</div><div class="bubble"><p class="cipher-preview">${message.ciphertext.slice(0, 64)}…</p><div><span>DECRYPTING...</span><time>${timeNow()}</time></div></div>`;
-  document.getElementById('messages')?.append(row);
-  document.getElementById('messages')?.scrollTo({ top: 999999, behavior: 'smooth' });
+  const messagesEl = document.getElementById('messages');
+  if (messagesEl) {
+    messagesEl.appendChild(row);
+    messagesEl.scrollTo({ top: 999999, behavior: 'smooth' });
+  }
   await wait(300);
 
   try {
     const msgEpoch = Number(message.epoch);
-    // Derive the exact message key from cache or current root (never advances)
     const { keyBytes, keyHex } = await deriveMessageKey(msgEpoch);
     const hmacOk = await verifyHmac(hexToBytes(message.ciphertext), keyBytes, message.hmac);
     const aesKey = await crypto.subtle.importKey(
@@ -339,10 +386,8 @@ async function handleBobRelay(message) {
     );
     const plaintext = textDecoder.decode(decrypted);
 
-    // Update bubble with result
     row.querySelector('.bubble').innerHTML = `<p>${escapeHtml(plaintext)}</p><div><span>DECRYPTED ✓ · HMAC ${hmacOk ? '✓' : '✗'}</span><time>${timeNow()}</time></div>`;
 
-    // Trigger demo4 reverse pipeline
     handleDemo4Control({
       action: 'pipeline_receive',
       payload: {
@@ -355,7 +400,6 @@ async function handleBobRelay(message) {
       },
     });
 
-    // Update message count (epoch already correct via ratchet sync)
     state.messageCount++;
     const msgCountEl = document.getElementById('messageCount');
     if (msgCountEl) msgCountEl.textContent = String(state.messageCount);
@@ -370,7 +414,6 @@ async function handleBobRelay(message) {
 
 function handleEveRelay(message) {
   state.interceptCount++;
-  // Eve does not touch ratchet – only observes
   document.dispatchEvent(new CustomEvent('eve:intercept', { detail: message }));
 }
 
@@ -380,10 +423,8 @@ function handleEveRelay(message) {
 async function handleDemoControl(message) {
   const { action, payload, from } = message;
 
-  // Dispatch event for Eve console (so UI buttons can react)
   document.dispatchEvent(new CustomEvent('eve:demo_control', { detail: { action, payload, from } }));
 
-  // Session initialisation (only Bob/Eve receive this)
   if (action === 'session_init') {
     if (state.role === 'alice') return;
     receiveSessionSecret(payload.secretHex);
@@ -397,11 +438,9 @@ async function handleDemoControl(message) {
     return;
   }
 
-  // Ratchet synchronisation (from Alice after each send)
   if (action === 'ratchet_advance') {
     const targetEpoch = payload.epoch;
     if (targetEpoch !== undefined && targetEpoch > getCurrentEpoch()) {
-      // Fast‑forward ratchet without deriving message keys (only advance root)
       for (let i = getCurrentEpoch(); i < targetEpoch; i++) {
         await advanceRatchet();
       }
@@ -410,7 +449,6 @@ async function handleDemoControl(message) {
     return;
   }
 
-  // Forward to individual demo handlers
   await handleDemo1Control(message, state, broadcastDemoControl);
   await handleDemo2Control(message, state, broadcastDemoControl);
   await handleDemo3Control(message, state, broadcastDemoControl, syncEpochFromSession);
@@ -477,6 +515,277 @@ function scheduleReconnect() {
 }
 
 // ----------------------------------------------------------------------
+//  Role Layout Renderers
+// ----------------------------------------------------------------------
+
+function renderAliceLayout() {
+  const container = document.getElementById('role-container');
+  if (!container) return;
+  
+  container.innerHTML = `
+    <div class="app-shell alice-shell">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"><span></span></span><span>QUANTUM<span>RESIST</span></span></div>
+        <div class="topbar-status"><span class="network-dot"></span><span>ALICE · Sender</span><span class="divider"></span><span id="headerLatency">pending</span></div>
+        <div class="peer-roster" id="peerRoster">
+          <div class="peer-roster-dot" id="peer-alice"><i></i><span>ALICE</span></div>
+          <div class="peer-roster-dot" id="peer-bob"><i></i><span>BOB</span></div>
+          <div class="peer-roster-dot" id="peer-eve"><i></i><span>EVE</span></div>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-button" id="soundToggle" aria-label="Toggle sound"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5Zm4.5 3.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg></button>
+          <div class="live-pill"><span></span> LIVE DEMO</div>
+        </div>
+      </header>
+      <main class="alice-main">
+        <div class="alice-messages-area">
+          <div class="messages" id="messages" aria-live="polite"></div>
+          <form class="composer" id="messageForm">
+            <button type="button" class="attach" aria-label="Attach file"><svg viewBox="0 0 24 24"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2A2 2 0 0 1 7 14.8l8.5-8.5"/></svg></button>
+            <input id="messageInput" maxlength="180" autocomplete="off" placeholder="Type a secure message..." aria-label="Secure message" />
+            <div class="composer-security"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> AES-256-GCM</div>
+            <button class="send-button" type="submit" aria-label="Send encrypted message"><svg viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/></svg></button>
+          </form>
+        </div>
+        <div class="alice-status-bar">
+          <div class="status-item"><span>🔐 ML-KEM-1024</span><strong>ACTIVE</strong></div>
+          <div class="status-item"><span>🔒 AES-256-GCM</span><strong>READY</strong></div>
+          <div class="status-item"><span>🔁 Forward Secrecy</span><strong id="epochBadge">EPOCH 001</strong></div>
+          <div class="status-item"><span>🔑 Session ID</span><code id="fingerprint">DERIVING</code><button id="copyFingerprint" class="copy-btn">📋</button></div>
+        </div>
+      </main>
+    </div>
+  `;
+  
+  // Create hidden elements needed for demos
+  ensureDemoElements();
+}
+
+function renderBobLayout() {
+  const container = document.getElementById('role-container');
+  if (!container) return;
+  
+  container.innerHTML = `
+    <div class="app-shell bob-shell">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"><span></span></span><span>QUANTUM<span>RESIST</span></span></div>
+        <div class="topbar-status"><span class="network-dot"></span><span>BOB · Receiver</span><span class="divider"></span><span id="headerLatency">pending</span></div>
+        <div class="peer-roster" id="peerRoster">
+          <div class="peer-roster-dot" id="peer-alice"><i></i><span>ALICE</span></div>
+          <div class="peer-roster-dot" id="peer-bob"><i></i><span>BOB</span></div>
+          <div class="peer-roster-dot" id="peer-eve"><i></i><span>EVE</span></div>
+        </div>
+        <div class="topbar-actions">
+          <div class="live-pill"><span></span> LIVE DEMO</div>
+        </div>
+      </header>
+      <main class="bob-main">
+        <div class="bob-messages-area">
+          <div class="messages" id="messages" aria-live="polite"></div>
+        </div>
+        <div class="bob-status-bar">
+          <div class="status-item"><span>Current Epoch</span><strong id="epochBadge">EPOCH 001</strong></div>
+          <div class="status-item"><span>Messages</span><strong id="messageCount">0</strong></div>
+          <div class="status-item"><span>Ratchet</span><strong id="ratchetLabel">Synchronized</strong></div>
+        </div>
+        <div class="ratchet-flow" id="ratchetFlow"></div>
+      </main>
+    </div>
+  `;
+  
+  ensureDemoElements();
+}
+
+function renderEveLayout() {
+  const container = document.getElementById('role-container');
+  if (!container) return;
+  
+  container.innerHTML = `
+    <div class="app-shell eve-shell">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"><span></span></span><span>QUANTUM<span>RESIST</span></span></div>
+        <div class="topbar-status"><span class="network-dot"></span><span>EVE · Attacker</span><span class="divider"></span><span id="headerLatency">pending</span></div>
+        <div class="peer-roster" id="peerRoster">
+          <div class="peer-roster-dot" id="peer-alice"><i></i><span>ALICE</span></div>
+          <div class="peer-roster-dot" id="peer-bob"><i></i><span>BOB</span></div>
+          <div class="peer-roster-dot" id="peer-eve"><i></i><span>EVE</span></div>
+        </div>
+        <div class="topbar-actions">
+          <div class="live-pill"><span></span> ATTACK CONSOLE</div>
+        </div>
+      </header>
+      <main class="eve-main">
+        <div id="eve-console-mount"></div>
+      </main>
+    </div>
+  `;
+  
+  ensureDemoElements();
+}
+
+function ensureDemoElements() {
+  // Create elements needed by demos that might not exist in role layouts
+  if (!document.getElementById('keyCount')) {
+    const hiddenEl = document.createElement('div');
+    hiddenEl.id = 'keyCount';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('modalEpoch')) {
+    const hiddenEl = document.createElement('div');
+    hiddenEl.id = 'modalEpoch';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('sharedKey')) {
+    const hiddenEl = document.createElement('div');
+    hiddenEl.id = 'sharedKey';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('rootKey')) {
+    const hiddenEl = document.createElement('div');
+    hiddenEl.id = 'rootKey';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('messageKey')) {
+    const hiddenEl = document.createElement('div');
+    hiddenEl.id = 'messageKey';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('latencyMetric')) {
+    const hiddenEl = document.createElement('div');
+    hiddenEl.id = 'latencyMetric';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('handshakeTime')) {
+    const hiddenEl = document.createElement('div');
+    hiddenEl.id = 'handshakeTime';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('signedMessage')) {
+    const hiddenEl = document.createElement('input');
+    hiddenEl.id = 'signedMessage';
+    hiddenEl.type = 'hidden';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('signatureLog')) {
+    const hiddenEl = document.createElement('div');
+    hiddenEl.id = 'signatureLog';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('verifySignature')) {
+    const hiddenEl = document.createElement('button');
+    hiddenEl.id = 'verifySignature';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('tamperSignature')) {
+    const hiddenEl = document.createElement('button');
+    hiddenEl.id = 'tamperSignature';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+  if (!document.getElementById('resetSignature')) {
+    const hiddenEl = document.createElement('button');
+    hiddenEl.id = 'resetSignature';
+    hiddenEl.style.display = 'none';
+    document.body.appendChild(hiddenEl);
+  }
+}
+
+// ----------------------------------------------------------------------
+//  Event binding (with safety checks)
+// ----------------------------------------------------------------------
+function bindEvents() {
+  const messageForm = document.getElementById('messageForm');
+  if (messageForm) {
+    messageForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('messageInput');
+      const text = input?.value.trim();
+      if (!text) return;
+      if (input) input.value = '';
+      await sendMessage(text);
+    });
+  }
+
+  const attackButton = document.getElementById('attackButton');
+  if (attackButton) {
+    attackButton.addEventListener('click', () => openModal(document.getElementById('attackModal')));
+  }
+
+  const resetNav = document.getElementById('resetNav');
+  if (resetNav) {
+    resetNav.addEventListener('click', () => location.reload());
+  }
+
+  const inspectButton = document.getElementById('inspectButton');
+  if (inspectButton) {
+    inspectButton.addEventListener('click', () => openModal(document.getElementById('keyModal')));
+  }
+
+  $$('[data-close]').forEach((btn) =>
+    btn.addEventListener('click', () => closeModal(btn.closest('.modal-backdrop')))
+  );
+  
+  $$('.modal-backdrop').forEach((bd) =>
+    bd.addEventListener('click', (e) => {
+      if (e.target === bd) closeModal(bd);
+    })
+  );
+  
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') $$('.modal-backdrop:not([hidden])').forEach(closeModal);
+  });
+
+  const launchAttack = document.getElementById('launchAttack');
+  if (launchAttack) {
+    launchAttack.addEventListener('click', () => {
+      broadcastDemoControl('launch_attack', { mode: state.attackMode });
+    });
+  }
+
+  const revealKeys = document.getElementById('revealKeys');
+  if (revealKeys) {
+    revealKeys.addEventListener('click', updateKeyInspector);
+  }
+
+  const copyFingerprint = document.getElementById('copyFingerprint');
+  if (copyFingerprint) {
+    copyFingerprint.addEventListener('click', async () => {
+      const fp = document.getElementById('fingerprint');
+      if (!fp) return;
+      await navigator.clipboard.writeText(fp.textContent);
+      showToast('Fingerprint copied');
+    });
+  }
+
+  const soundToggle = document.getElementById('soundToggle');
+  if (soundToggle) {
+    soundToggle.addEventListener('click', (e) => {
+      state.sound = !state.sound;
+      e.currentTarget.style.opacity = state.sound ? '1' : '0.35';
+      showToast(state.sound ? 'Sound enabled' : 'Sound muted');
+    });
+  }
+
+  // Attack mode toggle buttons (in modal)
+  $$('[data-mode]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      $$('[data-mode]').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.attackMode = btn.dataset.mode;
+    })
+  );
+}
+
+// ----------------------------------------------------------------------
 //  Role picker & UI setup
 // ----------------------------------------------------------------------
 function injectRolePicker() {
@@ -520,118 +829,11 @@ function injectRolePicker() {
           .join('')}
       </div>
     </div>`;
-  document.body.insertBefore(picker, $q('.app-shell'));
-  $q('.app-shell').style.display = 'none';
+  document.body.appendChild(picker);
   picker.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-role]');
     if (btn) location.search = `?role=${btn.dataset.role}`;
   });
-}
-
-function configureRoleUi() {
-  document.body.dataset.role = state.role;
-  const brandEl = $q('.brand');
-  if (brandEl) brandEl.href = `?role=${state.role}`;
-  const statusEl = $q('.topbar-status span:nth-child(2)');
-  if (statusEl) statusEl.textContent = `${state.role.toUpperCase()} secure network`;
-
-  if (state.role === 'bob') {
-    const composer = $q('.composer');
-    if (composer) composer.hidden = true;
-  }
-  if (state.role === 'eve') {
-    renderEveLayout();
-  } else {
-    const msgEl = document.getElementById('messages');
-    if (msgEl) msgEl.innerHTML = '';
-    addSystemMessage(`${state.role.toUpperCase()} joined – ratchet synchronising…`);
-  }
-}
-
-function renderEveLayout() {
-  const mainEl = $q('main');
-  if (!mainEl) return;
-  mainEl.dataset.activeView = 'eve';
-  mainEl.innerHTML = `<div id="eve-console-mount"></div>`;
-  initEveConsole(document.getElementById('eve-console-mount'), state, broadcastDemoControl);
-}
-
-function resetSession() {
-  // Reload page to fully reset session (simplest)
-  location.reload();
-}
-
-// ----------------------------------------------------------------------
-//  Event binding
-// ----------------------------------------------------------------------
-function bindEvents() {
-  $q('#messageForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const input = document.getElementById('messageInput');
-    const text = input?.value.trim();
-    if (!text) return;
-    if (input) input.value = '';
-    await sendMessage(text);
-  });
-
-  document.getElementById('attackButton')?.addEventListener('click', () =>
-    openModal(document.getElementById('attackModal'))
-  );
-  document.getElementById('attackNav')?.addEventListener('click', () =>
-    openModal(document.getElementById('attackModal'))
-  );
-  document.getElementById('resetNav')?.addEventListener('click', resetSession);
-  document.getElementById('inspectButton')?.addEventListener('click', () =>
-    openModal(document.getElementById('keyModal'))
-  );
-
-  $$('[data-close]').forEach((btn) =>
-    btn.addEventListener('click', () => closeModal(btn.closest('.modal-backdrop')))
-  );
-  $$('.modal-backdrop').forEach((bd) =>
-    bd.addEventListener('click', (e) => {
-      if (e.target === bd) closeModal(bd);
-    })
-  );
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') $$('.modal-backdrop:not([hidden])').forEach(closeModal);
-  });
-
-  $$('[data-mode]').forEach((btn) =>
-    btn.addEventListener('click', () => {
-      $$('[data-mode]').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.attackMode = btn.dataset.mode;
-    })
-  );
-
-  document.getElementById('launchAttack')?.addEventListener('click', () => {
-    broadcastDemoControl('launch_attack', { mode: state.attackMode });
-  });
-  document.getElementById('revealKeys')?.addEventListener('click', updateKeyInspector);
-
-  document.getElementById('copyFingerprint')?.addEventListener('click', async () => {
-    const fp = document.getElementById('fingerprint');
-    if (!fp) return;
-    await navigator.clipboard.writeText(fp.textContent);
-    showToast('Fingerprint copied');
-  });
-
-  document.getElementById('soundToggle')?.addEventListener('click', (e) => {
-    state.sound = !state.sound;
-    e.currentTarget.style.opacity = state.sound ? '1' : '0.35';
-    showToast(state.sound ? 'Sound enabled' : 'Sound muted');
-  });
-
-  $$('.nav-item[data-view]').forEach((btn) =>
-    btn.addEventListener('click', () => {
-      $$('.nav-item').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      const mainEl = $q('main');
-      if (mainEl) mainEl.dataset.activeView = btn.dataset.view;
-      $q('main')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    })
-  );
 }
 
 // ----------------------------------------------------------------------
@@ -645,10 +847,16 @@ async function main() {
   }
 
   state.role = role;
-  configureRoleUi();
+  
+  // Render role-specific layout FIRST
+  if (role === 'alice') renderAliceLayout();
+  else if (role === 'bob') renderBobLayout();
+  else if (role === 'eve') renderEveLayout();
+  
+  // Now bind events and initialize demos
   bindEvents();
 
-  // Initialise demo modules (each sets up its own DOM listeners)
+  // Initialise demo modules
   initDemo1(state, broadcastDemoControl);
   initDemo2(state, broadcastDemoControl);
   initDemo3(state, broadcastDemoControl);
@@ -676,9 +884,14 @@ async function main() {
       const ht = document.getElementById('handshakeTime');
       if (ht) ht.textContent = timeNow();
     });
-  } else {
-    // Eve
-    connectWebSocket(() => {});
+  } else if (role === 'eve') {
+    connectWebSocket(() => {
+      // Eve console will be initialized by its own module
+      const mountEl = document.getElementById('eve-console-mount');
+      if (mountEl) {
+        initEveConsole(mountEl, state, broadcastDemoControl);
+      }
+    });
   }
 }
 

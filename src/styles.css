@@ -801,3 +801,83 @@ body[data-role="eve"] .pipeline-overlay {
 .intercept-select-btn:hover {
   background: rgba(41,232,199,0.2);
 }
+
+/* Role-specific layouts */
+.alice-main, .bob-main, .eve-main {
+  padding: 30px 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.alice-messages-area, .bob-messages-area {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.alice-messages-area .messages, .bob-messages-area .messages {
+  height: 400px;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.alice-status-bar, .bob-status-bar {
+  display: flex;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.status-item span {
+  color: var(--muted);
+}
+
+.status-item strong {
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.status-item code {
+  background: #0a1012;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.copy-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.bob-main .ratchet-flow {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+/* Eve main area */
+.eve-main {
+  padding: 20px;
+}
+
+.eve-main #eve-console-mount {
+  min-height: calc(100vh - 112px);
+}

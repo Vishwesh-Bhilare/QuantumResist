@@ -1,9 +1,10 @@
 // src/demos/demo2.js
-// Harvest Now, Decrypt Later — Server‑side RSA decryption + PQC forward secrecy failure
-// Client only: harvest storage, timeskip animation, result display.
+// Harvest Now, Decrypt Later — Real RSA decryption + PQC forward secrecy failure
+// Client: harvest storage, timeskip animation, real RSA decryption, result display.
 
 let _broadcast = null;
-let _harvested = null;           // { ciphertext, iv, epoch, hmac, plaintext, harvestedAt }
+let _harvested = null;           // { ciphertext, iv, epoch, hmac, plaintext, rsaCiphertext, harvestedAt }
+let _rsaPrivateKey = null;       // Stored RSA private key from Demo 1
 
 export function initDemo2(state, broadcast) {
   _broadcast = broadcast;
@@ -27,15 +28,70 @@ export async function handleDemo2Control(message, state, broadcast) {
     return;
   }
 
+  // Store RSA private key from Demo 1
+  if (action === 'demo1_rsa_keygen') {
+    if (payload?.privateKeyJwk) {
+      try {
+        _rsaPrivateKey = await crypto.subtle.importKey(
+          'jwk',
+          payload.privateKeyJwk,
+          { name: 'RSA-OAEP', hash: 'SHA-256' },
+          true,
+          ['decrypt']
+        );
+        console.log('RSA private key imported for Demo 2');
+      } catch (err) {
+        console.error('Failed to import RSA private key:', err);
+      }
+    }
+    return;
+  }
+
   if (action === 'demo2_timeskip') {
     await runTimeskipAnimation(state, broadcast);
     return;
   }
 
   if (action === 'demo2_decrypt_result') {
-    // Server broadcasts the decryption result
+    // Server-side result (legacy - now we do client-side decryption)
     displaySplitResult(payload);
     return;
+  }
+}
+
+// Perform actual RSA decryption of harvested message
+async function performRsaDecryption() {
+  if (!_harvested) {
+    return { success: false, plaintext: '(no harvested message)' };
+  }
+
+  if (!_harvested.rsaCiphertext) {
+    return { success: false, plaintext: '(no RSA encrypted copy available - send a message first)' };
+  }
+
+  if (!_rsaPrivateKey) {
+    return { success: false, plaintext: '(RSA private key not available - run Demo 1 first)' };
+  }
+
+  try {
+    // Convert hex ciphertext to bytes
+    const rsaCiphertextBytes = hexToBytes(_harvested.rsaCiphertext);
+    
+    // Decrypt using RSA-OAEP
+    const decryptedBytes = await crypto.subtle.decrypt(
+      { name: 'RSA-OAEP' },
+      _rsaPrivateKey,
+      rsaCiphertextBytes
+    );
+    
+    // Decode plaintext
+    const decoder = new TextDecoder();
+    const plaintext = decoder.decode(decryptedBytes);
+    
+    return { success: true, plaintext };
+  } catch (err) {
+    console.error('RSA decryption failed:', err);
+    return { success: false, plaintext: `RSA DECRYPT FAILED: ${err.message}` };
   }
 }
 
@@ -79,20 +135,16 @@ async function runTimeskipAnimation(state, broadcast) {
   overlay.classList.remove('visible');
   await wait(200);
 
-  // Request decryption from server (includes both RSA and PQC paths)
-  if (_harvested) {
-    broadcast('demo2_decrypt_request', {
-      harvested: _harvested,
-    });
-  } else {
-    // No harvested message – show error
-    displaySplitResult({
-      classical: 'failed',
-      classicalPlaintext: '(no message harvested)',
-      pqc: 'failed',
-      pqcMessage: 'NO HARVESTED MESSAGE',
-    });
-  }
+  // Perform real RSA decryption locally
+  const rsaResult = await performRsaDecryption();
+  
+  // Display results with real decrypted plaintext
+  displaySplitResult({
+    classical: rsaResult.success ? 'decrypted' : 'failed',
+    classicalPlaintext: rsaResult.plaintext,
+    pqc: 'failed',
+    pqcMessage: 'STILL ENCRYPTED — KEY DELETED',
+  });
 }
 
 // Display side‑by‑side result overlay
@@ -146,6 +198,15 @@ function displaySplitResult(result) {
     if (e.target === overlay) overlay.classList.remove('visible');
   });
   overlay.classList.add('visible');
+}
+
+// Helper: convert hex string to Uint8Array
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
 }
 
 // Helper: create or get timeskip overlay DOM element
